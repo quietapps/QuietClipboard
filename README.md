@@ -30,7 +30,7 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 
 ## Features
 
-**Current release (Xcode):** version **0.1.4**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
+**Current release (Xcode):** version **0.1.5**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
 
 ### Capture & history
 
@@ -70,7 +70,7 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 - **Sensitive content** — on-device detection; don’t save, **save but hide** (blur until Reveal), or save normally
 - **Retention & storage** — auto-delete by age; manual cleanup; disk usage and JSON backup in **Settings → Storage**
 - **Usage statistics** — **Settings → Statistics**: copies/day, top apps, types, busiest hours (on-device)
-- **Settings** — sidebar panels aligned with the Library look; resizable window; **Statistics** split from Storage
+- **Settings** — top tab bar and Library-matched black chrome; fixed-width window; **Statistics** split from Storage; footer **Library** + **Quit**
 - **Excluded apps** — ignore copies while a chosen app is frontmost; **Recommended** list; first launch excludes 1Password and Keychain Access by default
 - **Export / Import** — JSON backup with metadata
 - **WidgetKit widgets** — Small, Medium, Large with AppIntents
@@ -91,7 +91,7 @@ The cask strips the macOS quarantine attribute on install so Gatekeeper does not
 
 ### Direct download
 
-1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.1.4**)
+1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.1.5**)
 2. Unzip → drag **Quiet Clipboard.app** into `/Applications`
 3. Strip the quarantine attribute (or right-click → Open once):
 

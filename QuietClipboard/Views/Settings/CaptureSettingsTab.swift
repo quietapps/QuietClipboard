@@ -14,9 +14,11 @@ struct CaptureSettingsTab: View {
 
     var body: some View {
         SettingsScrollContent {
-            SettingsCard(title: "Capture", systemImage: "doc.on.clipboard") {
+            SettingsCard(title: "Capture") {
                 SettingsToggleRow(
                     title: "Pause capture",
+                    icon: "pause.circle.fill",
+                    iconTint: .orange,
                     isOn: Binding(
                         get: { monitor.isPaused },
                         set: { monitor.setPaused($0) }
@@ -26,7 +28,6 @@ struct CaptureSettingsTab: View {
 
             SettingsCard(
                 title: "Excluded apps",
-                systemImage: "app.badge.checkmark",
                 footer: "Copies made while one of these apps is frontmost are ignored. A few sensitive apps are excluded by default; add more from Recommended."
             ) {
                 ExcludedAppsSettingsView()
@@ -34,7 +35,6 @@ struct CaptureSettingsTab: View {
 
             SettingsCard(
                 title: "Content types",
-                systemImage: "square.grid.2x2",
                 footer: "Turn off a group to stop capturing all of its types. With a group on, disable individual types you do not want saved."
             ) {
                 CaptureContentTypeSettings(
@@ -43,9 +43,12 @@ struct CaptureSettingsTab: View {
                 )
             }
 
-            SettingsCard(title: "Sensitive content", systemImage: "lock.shield") {
+            SettingsCard(title: "Sensitive content") {
                 SettingsToggleRow(
                     title: "Detect sensitive content",
+                    subtitle: "Passwords, API keys, tokens, and similar",
+                    icon: "lock.shield.fill",
+                    iconTint: .red,
                     isOn: $sensitiveEnabled
                 )
                 .onChange(of: sensitiveEnabled) { _, v in
@@ -56,6 +59,8 @@ struct CaptureSettingsTab: View {
 
                 SettingsPickerRow(
                     title: "When detected",
+                    icon: "eye.slash.fill",
+                    iconTint: .orange,
                     disabled: !sensitiveEnabled,
                     selection: $sensitiveBehavior
                 ) {
@@ -68,33 +73,49 @@ struct CaptureSettingsTab: View {
                 }
 
                 if sensitiveEnabled, sensitiveBehavior == .saveHidden {
-                    SettingsCaption("Saved clips stay blurred in the library, Quick Search, and menu bar until you tap Reveal.")
-                        .padding(.top, 4)
+                    Text("Saved clips stay blurred in the library, Quick Search, and menu bar until you tap Reveal.")
+                        .font(.caption)
+                        .foregroundStyle(SettingsChrome.secondaryText)
+                        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                        .padding(.bottom, 10)
                 }
             }
 
-            SettingsCard(title: "Organization", systemImage: "folder") {
-                SettingsToggleRow(title: "Suggest categories", isOn: $autoCategorize)
-                    .onChange(of: autoCategorize) { _, v in Preferences.autoCategorizationEnabled = v }
+            SettingsCard(title: "Organization") {
+                SettingsToggleRow(
+                    title: "Suggest categories",
+                    icon: "folder.fill",
+                    iconTint: .orange,
+                    isOn: $autoCategorize
+                )
+                .onChange(of: autoCategorize) { _, v in Preferences.autoCategorizationEnabled = v }
                 SettingsInsetDivider()
                 SettingsToggleRow(
                     title: "Use on-device language analysis",
+                    icon: "brain.head.profile",
+                    iconTint: .purple,
                     isOn: $autoCategorizeML
                 )
                 .disabled(!autoCategorize)
                 .onChange(of: autoCategorizeML) { _, v in Preferences.autoCategorizationML = v }
                 SettingsInsetDivider()
-                SettingsToggleRow(title: "Collapse near-duplicate clips", isOn: $collapseDuplicates)
-                    .onChange(of: collapseDuplicates) { _, v in Preferences.collapseDuplicates = v }
+                SettingsToggleRow(
+                    title: "Collapse near-duplicate clips",
+                    icon: "square.stack.3d.down.right",
+                    iconTint: .teal,
+                    isOn: $collapseDuplicates
+                )
+                .onChange(of: collapseDuplicates) { _, v in Preferences.collapseDuplicates = v }
             }
 
             SettingsCard(
                 title: "Universal Clipboard",
-                systemImage: "iphone.and.arrow.forward",
                 footer: "Detects Handoff via com.apple.is-remote-clipboard and tags clips as iPhone, iPad, or iPhone/iPad."
             ) {
                 SettingsToggleRow(
                     title: "Save copies from iPhone and iPad",
+                    icon: "iphone.and.arrow.forward",
+                    iconTint: .blue,
                     isOn: $captureUniversalClipboard
                 )
                 .onChange(of: captureUniversalClipboard) { _, v in
@@ -104,13 +125,17 @@ struct CaptureSettingsTab: View {
 
             SettingsCard(
                 title: "Links",
-                systemImage: "link",
                 footer: "Only network request the app makes."
             ) {
-                SettingsToggleRow(title: "Fetch link previews", isOn: $linkPreviewsEnabled)
-                    .onChange(of: linkPreviewsEnabled) { _, v in
-                        Preferences.linkPreviewsEnabled = v
-                    }
+                SettingsToggleRow(
+                    title: "Fetch link previews",
+                    icon: "link",
+                    iconTint: .blue,
+                    isOn: $linkPreviewsEnabled
+                )
+                .onChange(of: linkPreviewsEnabled) { _, v in
+                    Preferences.linkPreviewsEnabled = v
+                }
             }
         }
     }

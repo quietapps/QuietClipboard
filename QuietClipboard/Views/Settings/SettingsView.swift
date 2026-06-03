@@ -36,7 +36,11 @@ struct AppSettingsView: View {
                 }
             }
         }
-        .frame(minWidth: 620, idealWidth: 720, minHeight: 480)
+        .frame(width: SettingsChrome.windowWidth)
+        .frame(idealHeight: SettingsChrome.windowIdealHeight)
+        .frame(minHeight: SettingsChrome.windowMinHeight)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(SettingsChrome.shellBackground)
         .background(SettingsWindowConfigurator())
     }
 }
@@ -56,8 +60,26 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
     private func configureSettingsWindow(from view: NSView) {
         guard let window = view.window ?? NSApp.windows.first(where: isSettingsWindow) else { return }
         window.styleMask.insert([.resizable, .fullSizeContentView])
-        if window.minSize.width < 620 {
-            window.minSize = NSSize(width: 620, height: 480)
+        window.title = "Quiet Clipboard"
+        window.backgroundColor = .black
+        window.isOpaque = true
+        let width = SettingsChrome.windowWidth
+        let minHeight = SettingsChrome.windowMinHeight
+        let idealHeight = SettingsChrome.windowIdealHeight
+        window.minSize = NSSize(width: width, height: minHeight)
+        window.maxSize = NSSize(width: width, height: 16_000)
+        var frame = window.frame
+        var needsResize = false
+        if abs(frame.width - width) > 2 {
+            frame.size.width = width
+            needsResize = true
+        }
+        if frame.height < idealHeight - 2 {
+            frame.size.height = idealHeight
+            needsResize = true
+        }
+        if needsResize {
+            window.setFrame(frame, display: true)
         }
     }
 
@@ -79,11 +101,12 @@ private struct GeneralSettingsPanel: View {
         SettingsScrollContent {
             SettingsCard(
                 title: "App",
-                systemImage: "macwindow",
                 footer: "Sound plays when a new clip is saved; a lower tone plays for sensitive captures."
             ) {
                 SettingsToggleRow(
                     title: "Launch at login",
+                    icon: "power",
+                    iconTint: .green,
                     isOn: Binding(
                         get: { Preferences.launchAtLogin },
                         set: {
@@ -96,6 +119,8 @@ private struct GeneralSettingsPanel: View {
                 SettingsToggleRow(
                     title: "Pause capture",
                     subtitle: "Stops saving new clips until resumed",
+                    icon: "pause.circle.fill",
+                    iconTint: .orange,
                     isOn: Binding(
                         get: { monitor.isPaused },
                         set: { monitor.setPaused($0) }
@@ -104,6 +129,8 @@ private struct GeneralSettingsPanel: View {
                 SettingsInsetDivider()
                 SettingsToggleRow(
                     title: "Sound on capture",
+                    icon: "speaker.wave.2.fill",
+                    iconTint: .red,
                     isOn: Binding(
                         get: { Preferences.soundOnCopy },
                         set: { Preferences.soundOnCopy = $0 }
@@ -113,11 +140,12 @@ private struct GeneralSettingsPanel: View {
 
             SettingsCard(
                 title: "Paste",
-                systemImage: "arrow.right.doc.on.clipboard",
                 footer: "Auto-type sends keystrokes for apps that block paste (banking, RDP)."
             ) {
                 SettingsPickerRow(
                     title: "Default paste method",
+                    icon: "arrow.right.doc.on.clipboard",
+                    iconTint: .blue,
                     selection: Binding(
                         get: { Preferences.pasteDeliveryMethod },
                         set: {
@@ -132,9 +160,11 @@ private struct GeneralSettingsPanel: View {
                 }
             }
 
-            SettingsCard(title: "Appearance", systemImage: "paintbrush") {
+            SettingsCard(title: "Appearance") {
                 SettingsPickerRow(
                     title: "List previews",
+                    icon: "paintbrush.fill",
+                    iconTint: .purple,
                     selection: Binding(
                         get: { Preferences.clipPreviewStyle },
                         set: {
@@ -147,10 +177,12 @@ private struct GeneralSettingsPanel: View {
                         Text(style.displayName).tag(style)
                     }
                 }
-                ForEach(ClipPreviewStyle.allCases) { style in
-                    if style == Preferences.clipPreviewStyle {
-                        SettingsCaption(style.detail)
-                    }
+                if let style = ClipPreviewStyle.allCases.first(where: { $0 == Preferences.clipPreviewStyle }) {
+                    Text(style.detail)
+                        .font(.caption)
+                        .foregroundStyle(SettingsChrome.secondaryText)
+                        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                        .padding(.bottom, 10)
                 }
             }
         }
@@ -168,10 +200,9 @@ private struct QuickSearchSettingsPanel: View {
         SettingsScrollContent {
             SettingsCard(
                 title: "Popup",
-                systemImage: "rectangle.center.inset.filled",
                 footer: "Maximum clips shown when browsing or searching in Quick Search. Default \(Preferences.quickSearchListLimitDefault), up to \(Preferences.quickSearchListLimitMax). Older clips stay in the Library."
             ) {
-                SettingsLabeledFieldRow(title: "Clips in list") {
+                SettingsLabeledFieldRow(title: "Clips in list", icon: "list.number", iconTint: .blue) {
                     SettingsMonospaceField(text: $quickSearchListLimitText)
                         .focused($quickSearchListLimitFocused)
                         .onSubmit(commitQuickSearchListLimit)
@@ -184,6 +215,8 @@ private struct QuickSearchSettingsPanel: View {
 
                 SettingsPickerRow(
                     title: "Open at",
+                    icon: "arrow.up.left.and.arrow.down.right",
+                    iconTint: .teal,
                     selection: Binding(
                         get: { Preferences.quickSearchPlacement },
                         set: {
@@ -201,6 +234,8 @@ private struct QuickSearchSettingsPanel: View {
 
                 SettingsToggleRow(
                     title: "Show preview",
+                    icon: "sidebar.right",
+                    iconTint: .indigo,
                     isOn: Binding(
                         get: { Preferences.quickSearchPreviewEnabled },
                         set: {
@@ -212,14 +247,20 @@ private struct QuickSearchSettingsPanel: View {
 
                 SettingsInsetDivider()
 
-                SettingsActionButton(title: "Reset popup size", systemImage: "arrow.counterclockwise") {
-                    coordinator.resetQuickSearchSize()
+                HStack {
+                    SettingsActionButton(title: "Reset popup size", systemImage: "arrow.counterclockwise") {
+                        coordinator.resetQuickSearchSize()
+                    }
                 }
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 10)
 
                 if Preferences.quickSearchPlacement == .screenCenterChosen {
                     SettingsInsetDivider()
                     SettingsPickerRow(
                         title: "Display",
+                        icon: "display",
+                        iconTint: .gray,
                         selection: Binding<CGDirectDisplayID>(
                             get: { Preferences.quickSearchDisplayID ?? primaryDisplayID() },
                             set: {
@@ -238,7 +279,6 @@ private struct QuickSearchSettingsPanel: View {
 
             SettingsCard(
                 title: "Filter bar",
-                systemImage: "line.3.horizontal.decrease.circle",
                 footer: "Choose which filters appear in the Quick Search popup."
             ) {
                 ForEach(Array(QuickSearchPopupFilter.allCases.enumerated()), id: \.element.id) { index, filter in
@@ -253,6 +293,8 @@ private struct QuickSearchSettingsPanel: View {
                 SettingsInsetDivider()
                 SettingsToggleRow(
                     title: "Show my categories",
+                    icon: "folder.fill",
+                    iconTint: .orange,
                     isOn: Binding(
                         get: { QuickSearchFilterPreferences.showUserCategories },
                         set: {
@@ -262,10 +304,14 @@ private struct QuickSearchSettingsPanel: View {
                     )
                 )
                 SettingsInsetDivider()
-                SettingsActionButton(title: "Reset filters to defaults", systemImage: "arrow.counterclockwise") {
-                    QuickSearchFilterPreferences.resetToDefaults()
-                    coordinator.objectWillChange.send()
+                HStack {
+                    SettingsActionButton(title: "Reset filters to defaults", systemImage: "arrow.counterclockwise") {
+                        QuickSearchFilterPreferences.resetToDefaults()
+                        coordinator.objectWillChange.send()
+                    }
                 }
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 10)
             }
         }
         .onAppear {
@@ -327,27 +373,41 @@ private struct AboutSettingsPanel: View {
 
     var body: some View {
         SettingsScrollContent {
-            SettingsCard(title: "Quiet Clipboard", systemImage: "doc.on.clipboard.fill") {
+            SettingsCard(title: "About") {
                 HStack(spacing: 14) {
                     AppBrandIcon(size: 52, cornerRadius: 12)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Version \(version) (\(build))")
+                        Text("Quiet Clipboard")
                             .font(.headline)
                             .foregroundStyle(SettingsChrome.primaryText)
-                        Text("Local clipboard history for Mac")
+                        Text("Version \(version) (\(build))")
                             .font(.subheadline)
                             .foregroundStyle(SettingsChrome.secondaryText)
+                        Text("Local clipboard history for Mac")
+                            .font(.caption)
+                            .foregroundStyle(SettingsChrome.tertiaryText)
                     }
                 }
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 14)
             }
 
-            SettingsCard(title: "Privacy", systemImage: "hand.raised") {
-                SettingsCaption("Fully offline. No analytics, telemetry, or cloud accounts. The only optional network use is link preview fetching (toggle in Capture).")
+            SettingsCard(title: "Privacy") {
+                Text("Fully offline. No analytics, telemetry, or cloud accounts. The only optional network use is link preview fetching (toggle in Capture).")
+                    .font(.caption)
+                    .foregroundStyle(SettingsChrome.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                    .padding(.vertical, 12)
             }
 
-            SettingsCard(title: "License", systemImage: "doc.text") {
-                SettingsCaption("MIT License — see repository for full text.")
+            SettingsCard(title: "License") {
+                Text("MIT License — see repository for full text.")
+                    .font(.caption)
+                    .foregroundStyle(SettingsChrome.secondaryText)
+                    .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                    .padding(.vertical, 12)
             }
         }
     }

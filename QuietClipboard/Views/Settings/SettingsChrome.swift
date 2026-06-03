@@ -26,6 +26,16 @@ enum SettingsPanel: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Shorter label for the top tab bar.
+    var tabTitle: String {
+        switch self {
+        case .quickSearch: return "Search"
+        case .shortcuts: return "Keys"
+        case .statistics: return "Stats"
+        default: return title
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
@@ -39,27 +49,77 @@ enum SettingsPanel: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Chrome tokens (matches Library window + detail panel)
+// MARK: - Chrome tokens
 
 enum SettingsChrome {
+    /// Matches `LibraryWindow` (.background(.black)).
     static let shellBackground = Color.black
-    static let panelBackground = Color(red: 0.08, green: 0.08, blue: 0.08)
-    static let cardBackground = Color.white.opacity(0.06)
-    static let cardStroke = Color.white.opacity(0.08)
+    /// Inclusive tab + content panel (Library detail panel uses ~0.08 gray on black).
+    static let panelSurface = Color(red: 0.08, green: 0.08, blue: 0.08)
+    static let contentBackground = panelSurface
+    static let groupedBackground = Color.white.opacity(0.06)
+    static let groupedStroke = Color.white.opacity(0.08)
+    static let panelStroke = Color.white.opacity(0.08)
+    static let tabSelectedFill = Color.white.opacity(0.12)
+    static let footerBackground = Color(red: 0.08, green: 0.08, blue: 0.08)
     static let divider = Color.white.opacity(0.08)
     static let primaryText = Color.white
     static let secondaryText = Color.white.opacity(0.55)
     static let tertiaryText = Color.white.opacity(0.38)
-    static let pillInactive = Color.white.opacity(0.12)
+    static let sectionHeaderText = Color.white.opacity(0.42)
     static let controlFill = Color.white.opacity(0.1)
+    static let accent = Color(red: 0.35, green: 0.58, blue: 1.0)
 
-    static let sidebarWidth: CGFloat = 172
-    static let rowVerticalPadding: CGFloat = 5
-    static let nestedRowIndent: CGFloat = 16
+    static let rowHorizontalPadding: CGFloat = 14
+    static let rowVerticalPadding: CGFloat = 10
+    static let rowIconSize: CGFloat = 28
+    static let rowIconCorner: CGFloat = 7
+    static let nestedRowIndent: CGFloat = 44
     static let rowColumnSpacing: CGFloat = 12
-    /// Trailing column — toggles, pickers, fields align here.
     static let controlColumnWidth: CGFloat = 52
     static let controlColumnWidthWide: CGFloat = 200
+    static let groupedCornerRadius: CGFloat = 10
+    static let sectionSpacing: CGFloat = 20
+    static let dividerLeadingInset: CGFloat = rowHorizontalPadding + rowIconSize + rowColumnSpacing
+
+    /// Fits all seven top tabs in one row without scrolling.
+    static let windowWidth: CGFloat = 540
+    /// Tall enough for General tab (three sections) without a scrollbar on first open.
+    static let windowMinHeight: CGFloat = 620
+    static let windowIdealHeight: CGFloat = 620
+    static let tabSpacing: CGFloat = 2
+    static let tabBarHorizontalPadding: CGFloat = 6
+    static let tabBarVerticalPadding: CGFloat = 9
+    static let tabIconSize: CGFloat = 16
+    static let tabLabelSize: CGFloat = 11
+    static let tabLabelSpacing: CGFloat = 4
+    static let tabPillHorizontalPadding: CGFloat = 7
+    static let tabPillVerticalPadding: CGFloat = 6
+    static let tabPillCornerRadius: CGFloat = 7
+    static let shellTopInset: CGFloat = 14
+    static let shellBottomInset: CGFloat = 12
+    static let shellHorizontalInset: CGFloat = 12
+    static let shellSectionSpacing: CGFloat = 10
+    static let panelCornerRadius: CGFloat = 12
+    static let footerCornerRadius: CGFloat = 10
+}
+
+enum SettingsIconTint {
+    case purple, blue, green, orange, red, pink, teal, indigo, gray
+
+    var background: Color {
+        switch self {
+        case .purple: return Color(red: 0.45, green: 0.32, blue: 0.72)
+        case .blue: return Color(red: 0.28, green: 0.45, blue: 0.82)
+        case .green: return Color(red: 0.28, green: 0.62, blue: 0.42)
+        case .orange: return Color(red: 0.82, green: 0.48, blue: 0.22)
+        case .red: return Color(red: 0.78, green: 0.28, blue: 0.32)
+        case .pink: return Color(red: 0.82, green: 0.35, blue: 0.55)
+        case .teal: return Color(red: 0.22, green: 0.62, blue: 0.62)
+        case .indigo: return Color(red: 0.35, green: 0.38, blue: 0.78)
+        case .gray: return Color.white.opacity(0.18)
+        }
+    }
 }
 
 private struct SettingsDarkChromeKey: EnvironmentKey {
@@ -77,24 +137,167 @@ extension EnvironmentValues {
 
 struct SettingsShell<Content: View>: View {
     @Binding var panel: SettingsPanel
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @EnvironmentObject private var monitor: ClipboardMonitor
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(spacing: 0) {
-            SettingsTopBar()
-            SettingsChromeDivider()
-            HStack(alignment: .top, spacing: 0) {
-                SettingsSidebar(selection: $panel)
-                    .frame(width: SettingsChrome.sidebarWidth)
-                Rectangle()
-                    .fill(SettingsChrome.divider)
-                    .frame(width: 1)
-                content()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
+            Spacer()
+                .frame(height: SettingsChrome.shellTopInset)
+
+            settingsPanel
+
+            Spacer()
+                .frame(height: SettingsChrome.shellSectionSpacing)
+
+            SettingsFooterBar(
+                isPaused: monitor.isPaused,
+                onOpenLibrary: { coordinator.openLibraryWindow() },
+                onQuit: { NSApp.terminate(nil) }
+            )
+            .padding(.horizontal, SettingsChrome.shellHorizontalInset)
+
+            Spacer()
+                .frame(height: SettingsChrome.shellBottomInset)
         }
         .background(SettingsChrome.shellBackground)
         .environment(\.settingsDarkChrome, true)
+    }
+
+    /// Tabs + content share one rounded surface (Quiet Reminder–style).
+    private var settingsPanel: some View {
+        VStack(spacing: 0) {
+            SettingsTabBar(selection: $panel)
+
+            SettingsChromeDivider()
+                .padding(.horizontal, 10)
+
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .background(SettingsChrome.panelSurface, in: panelShape)
+        .overlay(panelShape.stroke(SettingsChrome.panelStroke, lineWidth: 1))
+        .padding(.horizontal, SettingsChrome.shellHorizontalInset)
+    }
+
+    private var panelShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: SettingsChrome.panelCornerRadius, style: .continuous)
+    }
+
+}
+
+// MARK: - Top tab bar
+
+struct SettingsTabBar: View {
+    @Binding var selection: SettingsPanel
+
+    var body: some View {
+        HStack(alignment: .center, spacing: SettingsChrome.tabSpacing) {
+            ForEach(SettingsPanel.allCases) { panel in
+                tabButton(panel)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, SettingsChrome.tabBarHorizontalPadding)
+        .padding(.vertical, SettingsChrome.tabBarVerticalPadding)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func tabButton(_ panel: SettingsPanel) -> some View {
+        let isActive = selection == panel
+        let pillShape = RoundedRectangle(cornerRadius: SettingsChrome.tabPillCornerRadius, style: .continuous)
+        return Button {
+            selection = panel
+        } label: {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                VStack(spacing: SettingsChrome.tabLabelSpacing) {
+                    Image(systemName: panel.systemImage)
+                        .font(.system(size: SettingsChrome.tabIconSize, weight: .medium))
+                    Text(panel.tabTitle)
+                        .font(.system(size: SettingsChrome.tabLabelSize, weight: isActive ? .semibold : .regular))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .foregroundStyle(isActive ? SettingsChrome.accent : SettingsChrome.secondaryText)
+                .padding(.horizontal, SettingsChrome.tabPillHorizontalPadding)
+                .padding(.vertical, SettingsChrome.tabPillVerticalPadding)
+                .background(pillShape.fill(isActive ? SettingsChrome.tabSelectedFill : Color.clear))
+                .contentShape(pillShape)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SettingsTabButtonStyle())
+        .pointerCursor()
+        .accessibilityLabel(panel.title)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+}
+
+/// Expands the clickable region to the full tab cell (not just icon/text glyphs).
+private struct SettingsTabButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+// MARK: - Footer
+
+struct SettingsFooterBar: View {
+    let isPaused: Bool
+    let onOpenLibrary: () -> Void
+    let onQuit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: isPaused ? "pause.circle.fill" : "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isPaused ? .orange : .green)
+                Text(isPaused ? "Capture paused" : "Capture active")
+                    .font(.caption)
+                    .foregroundStyle(SettingsChrome.secondaryText)
+            }
+
+            Spacer()
+
+            HStack(spacing: 0) {
+                footerAction(title: "Library", systemImage: "books.vertical", action: onOpenLibrary)
+
+                Rectangle()
+                    .fill(SettingsChrome.divider)
+                    .frame(width: 1, height: 14)
+                    .padding(.horizontal, 10)
+
+                footerAction(title: "Quit", systemImage: "power", action: onQuit)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(SettingsChrome.footerBackground, in: RoundedRectangle(cornerRadius: SettingsChrome.footerCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: SettingsChrome.footerCornerRadius, style: .continuous)
+                .stroke(SettingsChrome.panelStroke, lineWidth: 1)
+        )
+    }
+
+    private func footerAction(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.medium))
+                Text(title)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(SettingsChrome.secondaryText)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
     }
 }
 
@@ -122,89 +325,35 @@ struct AppBrandIcon: View {
     }
 }
 
-// MARK: - Top bar
-
-struct SettingsTopBar: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            AppBrandIcon(size: 36, cornerRadius: 8)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Quiet Clipboard")
-                    .font(.headline)
-                    .foregroundStyle(SettingsChrome.primaryText)
-                Text("Settings")
-                    .font(.subheadline)
-                    .foregroundStyle(SettingsChrome.secondaryText)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-    }
-}
-
-// MARK: - Sidebar (section list)
-
-struct SettingsSidebar: View {
-    @Binding var selection: SettingsPanel
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(SettingsPanel.allCases) { panel in
-                    sidebarRow(panel)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 12)
-        }
-        .background(SettingsChrome.panelBackground)
-    }
-
-    private func sidebarRow(_ panel: SettingsPanel) -> some View {
-        let isActive = selection == panel
-        return Button {
-            selection = panel
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: panel.systemImage)
-                    .font(.subheadline)
-                    .frame(width: 18)
-                Text(panel.title)
-                    .font(.subheadline.weight(isActive ? .semibold : .regular))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(isActive ? SettingsChrome.primaryText : SettingsChrome.secondaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isActive ? SettingsChrome.pillInactive : Color.clear)
-            )
-        }
-        .buttonStyle(.borderless)
-        .pointerCursor()
-    }
-}
-
-// MARK: - Scroll + cards
+// MARK: - Scroll + sections
 
 struct SettingsScrollContent<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: SettingsChrome.sectionSpacing) {
                 content()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(SettingsChrome.shellBackground)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.automatic)
+        .background(Color.clear)
+    }
+}
+
+struct SettingsSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(SettingsChrome.sectionHeaderText)
+            .tracking(0.5)
+            .padding(.leading, 2)
     }
 }
 
@@ -215,40 +364,34 @@ struct SettingsCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if let title {
-                SettingsCardHeader(title: title, systemImage: systemImage)
+                SettingsSectionHeader(title: title)
             }
-            content()
+
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(SettingsChrome.groupedBackground, in: RoundedRectangle(cornerRadius: SettingsChrome.groupedCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsChrome.groupedCornerRadius, style: .continuous)
+                    .stroke(SettingsChrome.groupedStroke, lineWidth: 1)
+            )
+
             if let footer, !footer.isEmpty {
                 SettingsFooterText(footer)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SettingsChrome.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(SettingsChrome.cardStroke, lineWidth: 1)
-        )
     }
 }
 
+/// Legacy header — maps to section style when used standalone.
 struct SettingsCardHeader: View {
     let title: String
     var systemImage: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(SettingsChrome.secondaryText)
-            }
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(SettingsChrome.primaryText)
-        }
+        SettingsSectionHeader(title: title)
     }
 }
 
@@ -261,18 +404,20 @@ struct SettingsFooterText: View {
             .font(.caption)
             .foregroundStyle(SettingsChrome.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 2)
     }
 }
 
 struct SettingsChromeDivider: View {
     var body: some View {
-        Divider()
-            .overlay(SettingsChrome.divider)
+        Rectangle()
+            .fill(SettingsChrome.divider)
+            .frame(height: 1)
     }
 }
 
 struct SettingsInsetDivider: View {
-    var leadingInset: CGFloat = 0
+    var leadingInset: CGFloat = SettingsChrome.dividerLeadingInset
 
     var body: some View {
         Rectangle()
@@ -282,9 +427,26 @@ struct SettingsInsetDivider: View {
     }
 }
 
-// MARK: - Two-column row layout (label zone | control zone)
+// MARK: - Row icon
+
+struct SettingsRowIcon: View {
+    let systemImage: String
+    var tint: SettingsIconTint = .gray
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.95))
+            .frame(width: SettingsChrome.rowIconSize, height: SettingsChrome.rowIconSize)
+            .background(tint.background, in: RoundedRectangle(cornerRadius: SettingsChrome.rowIconCorner, style: .continuous))
+    }
+}
+
+// MARK: - Row layout
 
 struct SettingsRowColumns<Label: View, Control: View>: View {
+    var icon: String? = nil
+    var iconTint: SettingsIconTint = .gray
     var indent: CGFloat = 0
     var controlWidth: CGFloat = SettingsChrome.controlColumnWidth
     var alignment: VerticalAlignment = .center
@@ -293,13 +455,21 @@ struct SettingsRowColumns<Label: View, Control: View>: View {
 
     var body: some View {
         HStack(alignment: alignment, spacing: SettingsChrome.rowColumnSpacing) {
+            if let icon {
+                SettingsRowIcon(systemImage: icon, tint: iconTint)
+            } else if indent > 0 {
+                Color.clear
+                    .frame(width: SettingsChrome.rowIconSize, height: SettingsChrome.rowIconSize)
+            }
+
             label()
-                .padding(.leading, indent)
+                .padding(.leading, indent > 0 && icon == nil ? indent - SettingsChrome.rowIconSize - SettingsChrome.rowColumnSpacing : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             control()
                 .frame(width: controlWidth, alignment: .trailing)
         }
+        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
     }
 }
 
@@ -308,17 +478,25 @@ struct SettingsRowColumns<Label: View, Control: View>: View {
 struct SettingsToggleRow: View {
     let title: String
     var subtitle: String? = nil
+    var icon: String? = nil
+    var iconTint: SettingsIconTint = .blue
     var indent: CGFloat = 0
     @Binding var isOn: Bool
     var disabled: Bool = false
 
     private var hasSubtitle: Bool { subtitle != nil }
+    private var showIcon: Bool { icon != nil && indent == 0 }
 
     var body: some View {
-        SettingsRowColumns(indent: indent, alignment: hasSubtitle ? .top : .center) {
+        SettingsRowColumns(
+            icon: showIcon ? icon : nil,
+            iconTint: iconTint,
+            indent: indent,
+            alignment: hasSubtitle ? .top : .center
+        ) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.body)
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(disabled ? SettingsChrome.tertiaryText : SettingsChrome.primaryText)
                 if let subtitle {
                     Text(subtitle)
@@ -331,10 +509,10 @@ struct SettingsToggleRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(.white)
+                .tint(SettingsChrome.accent)
                 .disabled(disabled)
         }
-        .padding(.vertical, hasSubtitle ? 8 : SettingsChrome.rowVerticalPadding)
+        .padding(.vertical, hasSubtitle ? 12 : SettingsChrome.rowVerticalPadding)
         .opacity(disabled ? 0.5 : 1)
     }
 }
@@ -365,6 +543,9 @@ struct SettingsDisabledTypeRow: View {
 
 struct SettingsPickerRow<Selection: Hashable, Content: View>: View {
     let title: String
+    var subtitle: String? = nil
+    var icon: String? = nil
+    var iconTint: SettingsIconTint = .blue
     var indent: CGFloat = 0
     var disabled: Bool = false
     @Binding var selection: Selection
@@ -372,12 +553,23 @@ struct SettingsPickerRow<Selection: Hashable, Content: View>: View {
 
     var body: some View {
         SettingsRowColumns(
+            icon: icon,
+            iconTint: iconTint,
             indent: indent,
-            controlWidth: SettingsChrome.controlColumnWidthWide
+            controlWidth: SettingsChrome.controlColumnWidthWide,
+            alignment: subtitle != nil ? .top : .center
         ) {
-            Text(title)
-                .font(.body)
-                .foregroundStyle(disabled ? SettingsChrome.tertiaryText : SettingsChrome.primaryText)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(disabled ? SettingsChrome.tertiaryText : SettingsChrome.primaryText)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(SettingsChrome.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         } control: {
             Picker("", selection: $selection) {
                 content()
@@ -386,26 +578,36 @@ struct SettingsPickerRow<Selection: Hashable, Content: View>: View {
             .pickerStyle(.menu)
             .disabled(disabled)
         }
-        .padding(.vertical, SettingsChrome.rowVerticalPadding)
+        .padding(.vertical, subtitle != nil ? 12 : SettingsChrome.rowVerticalPadding)
         .opacity(disabled ? 0.5 : 1)
     }
 }
 
 struct SettingsLabeledFieldRow: View {
     let title: String
+    var icon: String? = nil
+    var iconTint: SettingsIconTint = .blue
     var indent: CGFloat = 0
     @ViewBuilder var field: () -> AnyView
 
-    init<Content: View>(title: String, indent: CGFloat = 0, @ViewBuilder field: @escaping () -> Content) {
+    init<Content: View>(
+        title: String,
+        icon: String? = nil,
+        iconTint: SettingsIconTint = .blue,
+        indent: CGFloat = 0,
+        @ViewBuilder field: @escaping () -> Content
+    ) {
         self.title = title
+        self.icon = icon
+        self.iconTint = iconTint
         self.indent = indent
         self.field = { AnyView(field()) }
     }
 
     var body: some View {
-        SettingsRowColumns(indent: indent, controlWidth: 88) {
+        SettingsRowColumns(icon: icon, iconTint: iconTint, indent: indent, controlWidth: 88) {
             Text(title)
-                .font(.body)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(SettingsChrome.primaryText)
         } control: {
             field()
@@ -416,12 +618,14 @@ struct SettingsLabeledFieldRow: View {
 
 struct SettingsValueRow<Trailing: View>: View {
     let title: String
+    var icon: String? = nil
+    var iconTint: SettingsIconTint = .blue
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        SettingsRowColumns(controlWidth: SettingsChrome.controlColumnWidthWide) {
+        SettingsRowColumns(icon: icon, iconTint: iconTint, controlWidth: SettingsChrome.controlColumnWidthWide) {
             Text(title)
-                .font(.body)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(SettingsChrome.primaryText)
         } control: {
             trailing()
@@ -433,18 +637,13 @@ struct SettingsValueRow<Trailing: View>: View {
 // MARK: - Action buttons
 
 enum SettingsButtonVariant {
-    /// Neutral actions (export, import, reset).
     case secondary
-    /// Primary action in a card (clean up).
     case primary
-    /// Destructive actions (clear, erase).
     case destructive
 }
 
 enum SettingsActionButtonSize {
-    /// Full-width card actions (storage, danger zone).
     case regular
-    /// Inline toolbars; matches compact settings chips (~36pt tall).
     case compact
 }
 
@@ -479,7 +678,6 @@ struct SettingsActionButton: View {
     }
 }
 
-/// Vertical stack of full-width action buttons with consistent spacing.
 struct SettingsActionStack<Content: View>: View {
     var spacing: CGFloat = 8
     @ViewBuilder var content: () -> Content
@@ -488,6 +686,8 @@ struct SettingsActionStack<Content: View>: View {
         VStack(spacing: spacing) {
             content()
         }
+        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+        .padding(.vertical, 10)
     }
 }
 
@@ -527,12 +727,7 @@ private struct SettingsFilledButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else {
-            switch variant {
-            case .primary: return SettingsChrome.controlFill
-            default: return SettingsChrome.controlFill.opacity(0.6)
-            }
-        }
+        guard isEnabled else { return SettingsChrome.controlFill.opacity(0.6) }
         switch variant {
         case .secondary:
             return Color.white.opacity(isPressed ? 0.14 : 0.1)
@@ -544,7 +739,7 @@ private struct SettingsFilledButtonStyle: ButtonStyle {
     }
 
     private var borderColor: Color {
-        guard isEnabled else { return SettingsChrome.cardStroke }
+        guard isEnabled else { return SettingsChrome.groupedStroke }
         switch variant {
         case .secondary: return Color.white.opacity(0.14)
         case .primary: return Color.clear
@@ -562,6 +757,8 @@ struct SettingsCaption: View {
             .font(.caption)
             .foregroundStyle(SettingsChrome.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+            .padding(.bottom, 10)
     }
 }
 
@@ -581,7 +778,7 @@ struct SettingsMonospaceField: View {
             .background(SettingsChrome.controlFill, in: RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(SettingsChrome.cardStroke, lineWidth: 1)
+                    .stroke(SettingsChrome.groupedStroke, lineWidth: 1)
             )
     }
 }

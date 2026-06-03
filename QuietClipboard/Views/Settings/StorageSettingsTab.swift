@@ -24,10 +24,14 @@ struct StorageSettingsTab: View {
 
             SettingsCard(
                 title: "Automatic retention",
-                systemImage: "clock.arrow.circlepath",
                 footer: "Runs daily. Favorites are never removed automatically."
             ) {
-                SettingsPickerRow(title: "Auto-delete after", selection: $retention) {
+                SettingsPickerRow(
+                    title: "Auto-delete after",
+                    icon: "clock.arrow.circlepath",
+                    iconTint: .blue,
+                    selection: $retention
+                ) {
                     ForEach(RetentionPeriod.allCases) { period in
                         Text(period.displayName).tag(period)
                     }
@@ -39,10 +43,14 @@ struct StorageSettingsTab: View {
 
             SettingsCard(
                 title: "Manual cleanup",
-                systemImage: "slider.horizontal.3",
                 footer: "Removes non-favorited clips whose last copy is older than the selected window."
             ) {
-                SettingsPickerRow(title: "Older than", selection: $cleanupAge) {
+                SettingsPickerRow(
+                    title: "Older than",
+                    icon: "calendar.badge.minus",
+                    iconTint: .orange,
+                    selection: $cleanupAge
+                ) {
                     ForEach(CleanupAgeOption.allCases) { option in
                         Text(option.displayName).tag(option)
                     }
@@ -53,25 +61,28 @@ struct StorageSettingsTab: View {
 
                 SettingsInsetDivider()
 
-                SettingsValueRow(title: "Eligible clips") {
+                SettingsValueRow(title: "Eligible clips", icon: "tray.full", iconTint: .teal) {
                     staleCountLabel
                 }
 
                 SettingsInsetDivider()
 
-                SettingsActionButton(
-                    title: "Clean up now",
-                    systemImage: "trash",
-                    variant: .primary
-                ) {
-                    showAgeCleanupConfirm = true
+                HStack {
+                    SettingsActionButton(
+                        title: "Clean up now",
+                        systemImage: "trash",
+                        variant: .primary
+                    ) {
+                        showAgeCleanupConfirm = true
+                    }
+                    .disabled(staleCount == 0)
                 }
-                .disabled(staleCount == 0)
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 10)
             }
 
             SettingsCard(
                 title: "Danger zone",
-                systemImage: "exclamationmark.triangle",
                 footer: "Erase entire history includes favorites and cannot be undone."
             ) {
                 SettingsActionStack {
@@ -95,7 +106,6 @@ struct StorageSettingsTab: View {
 
             SettingsCard(
                 title: "Backup",
-                systemImage: "externaldrive",
                 footer: "Full history export for backup or moving to another Mac."
             ) {
                 HStack(alignment: .center, spacing: 10) {
@@ -117,6 +127,8 @@ struct StorageSettingsTab: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 12)
             }
         }
         .onAppear { refreshMetrics() }
@@ -251,14 +263,15 @@ private struct StorageStatusBanner: View {
                 .font(.callout)
                 .foregroundStyle(SettingsChrome.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SettingsChrome.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(SettingsChrome.cardStroke, lineWidth: 1)
-        )
+                }
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(SettingsChrome.groupedBackground, in: RoundedRectangle(cornerRadius: SettingsChrome.groupedCornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: SettingsChrome.groupedCornerRadius)
+                        .stroke(SettingsChrome.groupedStroke, lineWidth: 1)
+                )
     }
 }
 

@@ -50,7 +50,7 @@ struct ShortcutRecorderView: View {
 
     private var chipStroke: Color {
         if recording { return Color.accentColor }
-        return darkChrome ? SettingsChrome.cardStroke : Color.secondary.opacity(0.3)
+        return darkChrome ? SettingsChrome.groupedStroke : Color.secondary.opacity(0.3)
     }
 }
 

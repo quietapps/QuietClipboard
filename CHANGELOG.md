@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
+## [0.1.5] — 2026-06-03
+
+Version **0.1.5**
+
+### Build 1
+
+#### Added
+
+- **Settings top tab bar** — horizontal tabs (General, Search, Capture, Keys, Stats, Storage, About) replace the sidebar; full cell is clickable with a compact selection pill
+- **Settings footer** — capture status, **Library** shortcut, and **Quit** (matches menu bar quit)
+
+#### Changed
+
+- **Settings layout** — inclusive rounded panel for tabs + content; shell/footer spacing aligned with Quiet Reminder–style chrome
+- **Settings background** — pure black shell and Library-matched surfaces (`#141414` panels, 6% grouped rows)
+- **Settings window** — fixed **540×620** width/height so General opens without a scrollbar; vertically resizable only
+- **Settings rows** — colored row icons on General, Capture, Storage, and Shortcuts panels
+- **Excluded apps** — balanced chip and button sizing in the grouped card
+
+#### Fixed
+
+- **Tab selection highlight** — no longer stretches full tab-bar height (proper pill around icon + label)
+- **Scroll indicators** — `scrollBounceBehavior(.basedOnSize)` hides scroll chrome when content fits
+
+---
+
 ## [0.1.4] — 2026-06-03
 
 Version **0.1.4**

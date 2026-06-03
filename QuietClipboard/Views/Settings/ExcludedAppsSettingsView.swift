@@ -16,7 +16,7 @@ struct ExcludedAppsSettingsView: View {
     @State private var showRecommended = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if excludedIDs.isEmpty {
                 emptyState
             } else {
@@ -52,6 +52,8 @@ struct ExcludedAppsSettingsView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+        .padding(.vertical, 12)
         .onAppear { reload() }
         .sheet(isPresented: $showRecommended) {
             RecommendedExcludedAppsSheet(excludedIDs: $excludedIDs, onSave: persist)
@@ -145,7 +147,7 @@ private struct ExcludedAppChip: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: ExcludedAppLayout.rowHeight, alignment: .leading)
         .background(SettingsChrome.controlFill, in: chipShape)
-        .overlay(chipShape.stroke(SettingsChrome.cardStroke, lineWidth: 1))
+        .overlay(chipShape.stroke(SettingsChrome.groupedStroke, lineWidth: 1))
         .help(bundleID)
     }
 
@@ -315,6 +317,6 @@ private struct RecommendedAppPickChip: View {
 
     private var chipBorder: Color {
         if isSelected { return Color.white.opacity(0.35) }
-        return SettingsChrome.cardStroke
+        return SettingsChrome.groupedStroke
     }
 }

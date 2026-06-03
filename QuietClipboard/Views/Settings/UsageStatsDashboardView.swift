@@ -40,7 +40,8 @@ struct UsageStatsDashboardView: View {
                 busiestHoursSection
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+        .padding(.vertical, 14)
     }
 
     private var copiesPerDaySection: some View {

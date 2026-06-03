@@ -14,7 +14,7 @@ struct StatisticsSettingsTab: View {
 
     var body: some View {
         SettingsScrollContent {
-            SettingsCard(title: "Storage overview", systemImage: "internaldrive") {
+            SettingsCard(title: "Storage overview") {
                 StorageOverviewCard(
                     usageBytes: usage,
                     counts: historyCounts,
@@ -24,7 +24,6 @@ struct StatisticsSettingsTab: View {
 
             SettingsCard(
                 title: "Usage",
-                systemImage: "chart.bar.fill",
                 footer: "Based on copy events from the last 14 days. All processing stays on your Mac."
             ) {
                 UsageStatsDashboardView(stats: usageStats, isLoading: usageStatsLoading)
@@ -97,6 +96,8 @@ struct StorageOverviewCard: View {
                 statBlock(value: counts.nonFavorites, label: "Other", icon: "doc.on.doc")
             }
         }
+        .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+        .padding(.vertical, 14)
     }
 
     private var storageStatDivider: some View {

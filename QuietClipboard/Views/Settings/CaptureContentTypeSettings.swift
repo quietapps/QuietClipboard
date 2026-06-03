@@ -19,6 +19,8 @@ struct CaptureContentTypeSettings: View {
         SettingsToggleRow(
             title: group.displayName,
             subtitle: group.summary,
+            icon: group.systemImage,
+            iconTint: iconTint(for: group),
             isOn: parentBinding(for: group)
         )
 
@@ -82,6 +84,14 @@ struct CaptureContentTypeSettings: View {
                 persist()
             }
         )
+    }
+
+    private func iconTint(for group: CaptureContentGroup) -> SettingsIconTint {
+        switch group {
+        case .text: return .blue
+        case .media: return .green
+        case .other: return .gray
+        }
     }
 
     private func persist() {
