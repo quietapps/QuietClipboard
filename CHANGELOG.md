@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
+## [0.1.1] — 2026-06-03
+
+Version **0.1.1**
+
+### Build 1
+
+#### Fixed
+
+- **Rich text link preservation** — copying linked text (e.g. a Jira ticket link, a hyperlinked word in a browser) no longer strips the hyperlink; the app now captures the HTML representation from the clipboard and writes it back on paste, keeping the link intact in apps that accept HTML (browsers, Jira, Notion, etc.)
+
+---
+
 ## [0.1.0] — 2026-06-02
 
 Version **0.1.0**

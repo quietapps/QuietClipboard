@@ -29,6 +29,10 @@ enum ContentTypeDetector {
         if snap.rtf != nil || snap.rtfd != nil {
             return .richText
         }
+        // HTML with hyperlinks (e.g. browser copies) = rich text even without RTF
+        if let html = snap.html, html.contains("href") {
+            return .richText
+        }
         if snap.string != nil {
             return .text
         }

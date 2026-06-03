@@ -72,7 +72,12 @@ enum PasteboardHelper {
         case .text, .markdown, .code, .link, .color, .svg, .other:
             if let s = item.textContent { pb.setString(s, forType: .string) }
         case .richText:
-            pb.setData(item.content, forType: .rtf)
+            if item.fileMIMEType == "text/html",
+               let htmlString = String(data: item.content, encoding: .utf8) {
+                pb.setString(htmlString, forType: .html)
+            } else {
+                pb.setData(item.content, forType: .rtf)
+            }
             if let s = item.textContent { pb.setString(s, forType: .string) }
         case .image, .screenshot:
             pb.setData(item.content, forType: .png)

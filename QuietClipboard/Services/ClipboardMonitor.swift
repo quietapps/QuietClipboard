@@ -266,13 +266,16 @@ final class ClipboardMonitor: ObservableObject {
             return Payload(content: data, text: url.absoluteString,
                            thumbnail: nil, fileSize: size, mime: nil)
         case .richText:
-            guard let rtf = snap.rtf else {
-                if let s = snap.string {
-                    return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: nil)
-                }
-                return nil
+            if let rtf = snap.rtf {
+                return Payload(content: rtf, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/rtf")
             }
-            return Payload(content: rtf, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/rtf")
+            if let html = snap.html, let htmlData = html.data(using: .utf8) {
+                return Payload(content: htmlData, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/html")
+            }
+            if let s = snap.string {
+                return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: nil)
+            }
+            return nil
         case .text, .markdown, .code, .link, .color, .svg, .other:
             guard let s = snap.string else { return nil }
             return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: "text/plain")
