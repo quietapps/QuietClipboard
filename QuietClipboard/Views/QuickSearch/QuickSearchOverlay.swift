@@ -464,64 +464,127 @@ private struct PreviewPane: View {
 
     var body: some View {
         if let item {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                previewHeader(for: item)
                 SensitiveContentGate(item: item) {
                     preview(for: item)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
                 Divider()
                 metadata(for: item)
+                    .padding(12)
             }
-            .padding(16)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.35))
             .environmentObject(coordinator)
         } else {
-            VStack {
-                Image(systemName: "tray").font(.largeTitle).foregroundStyle(.secondary)
-                Text("Nothing to preview").font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                Image(systemName: "eye.slash")
+                    .font(.title2)
+                    .foregroundStyle(.tertiary)
+                Text("Select an item to preview")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func previewHeader(for item: ClipboardItem) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: item.contentType.systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(item.contentType.displayName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            if item.isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.yellow)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
     private func preview(for item: ClipboardItem) -> some View {
         switch item.contentType {
         case .image, .screenshot:
-            if let nsImage = NSImage(data: item.content) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else { fallback(item) }
+            PreviewContentCard(style: .panel) {
+                if let nsImage = NSImage(data: item.content) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    fallback(item)
+                }
+            }
         case .color:
-            if let hex = item.colorHex, let c = Color(hex: hex) {
-                c.clipShape(RoundedRectangle(cornerRadius: 6))
-            } else { fallback(item) }
+            PreviewContentCard(style: .panel) {
+                if let hex = item.colorHex, let c = Color(hex: hex) {
+                    ZStack(alignment: .bottomLeading) {
+                        c
+                        Text(hex)
+                            .font(.caption.monospaced().weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+                            .padding(10)
+                    }
+                    .frame(minHeight: 120, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                } else {
+                    fallback(item)
+                }
+            }
         case .link:
             LinkPreviewCard(item: item)
         case .richText, .markdown:
-            RichContentPreview(item: item)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            RichContentPreview(item: item, style: .panel)
         case .text:
             if RichContentRenderer.previewKind(for: item) == .markdown {
-                RichContentPreview(item: item)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                RichContentPreview(item: item, style: .panel)
             } else {
                 plainTextPreview(item)
             }
+        case .code:
+            codePreview(item)
         default:
             plainTextPreview(item)
         }
     }
 
     private func plainTextPreview(_ item: ClipboardItem) -> some View {
-        ScrollView {
-            Text(item.textContent ?? item.title ?? "")
-                .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+        PreviewContentCard(style: .panel) {
+            ScrollView {
+                Text(item.textContent ?? item.title ?? "")
+                    .font(.system(.callout, design: item.contentType == .code ? .monospaced : .default))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func codePreview(_ item: ClipboardItem) -> some View {
+        let language = CodeHighlighter.detectLanguage(item.textContent ?? "")
+        return PreviewContentCard(style: .panel) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(language.displayName, systemImage: "chevron.left.forwardslash.chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ScrollView {
+                    Text(CodeHighlighter.attributedString(for: item.textContent ?? "", language: language))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
         }
     }
 

@@ -93,9 +93,10 @@ enum SettingsChrome {
     static let tabIconSize: CGFloat = 16
     static let tabLabelSize: CGFloat = 11
     static let tabLabelSpacing: CGFloat = 4
-    static let tabPillHorizontalPadding: CGFloat = 7
-    static let tabPillVerticalPadding: CGFloat = 6
     static let tabPillCornerRadius: CGFloat = 7
+    /// Same highlight size for every tab (longest label is "General" / "Capture" / "Storage").
+    static let tabPillWidth: CGFloat = 56
+    static let tabPillHeight: CGFloat = 38
     static let shellTopInset: CGFloat = 14
     static let shellBottomInset: CGFloat = 12
     static let shellHorizontalInset: CGFloat = 12
@@ -218,11 +219,14 @@ struct SettingsTabBar: View {
                     Text(panel.tabTitle)
                         .font(.system(size: SettingsChrome.tabLabelSize, weight: isActive ? .semibold : .regular))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.75)
                 }
                 .foregroundStyle(isActive ? SettingsChrome.accent : SettingsChrome.secondaryText)
-                .padding(.horizontal, SettingsChrome.tabPillHorizontalPadding)
-                .padding(.vertical, SettingsChrome.tabPillVerticalPadding)
+                .frame(
+                    width: SettingsChrome.tabPillWidth,
+                    height: SettingsChrome.tabPillHeight,
+                    alignment: .center
+                )
                 .background(pillShape.fill(isActive ? SettingsChrome.tabSelectedFill : Color.clear))
                 .contentShape(pillShape)
                 Spacer(minLength: 0)

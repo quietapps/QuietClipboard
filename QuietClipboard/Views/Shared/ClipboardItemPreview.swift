@@ -93,7 +93,7 @@ struct ClipboardItemPreview: View {
 
     @ViewBuilder
     private var richTextPreview: some View {
-        if let attr = RichContentRenderer.attributedPreview(for: item), attr.length > 0 {
+        if let attr = RichContentRenderer.appearanceAdaptedPreview(for: item), attr.length > 0 {
             AttributedTextPreview(attributedString: attr)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

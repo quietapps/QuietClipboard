@@ -1,6 +1,11 @@
 import AppKit
 import Foundation
 
+struct ParsedMarkdownTable: Equatable {
+    let headers: [String]
+    let rows: [[String]]
+}
+
 enum RichContentRenderer {
     enum PreviewKind: Equatable {
         case rtf
@@ -49,6 +54,92 @@ enum RichContentRenderer {
         case .plain:
             return nil
         }
+    }
+
+    static func appearanceAdaptedPreview(for item: ClipboardItem) -> NSAttributedString? {
+        guard let attr = attributedPreview(for: item) else { return nil }
+        return appearanceAdapted(attr)
+    }
+
+    static func parsedMarkdownTable(for item: ClipboardItem) -> ParsedMarkdownTable? {
+        guard previewKind(for: item) == .markdown,
+              let text = markdownPlainText(for: item) else { return nil }
+        return parseMarkdownTable(text)
+    }
+
+    static func appearanceAdapted(_ attr: NSAttributedString) -> NSAttributedString {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let mutable = NSMutableAttributedString(attributedString: attr)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.enumerateAttribute(.backgroundColor, in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            mutable.removeAttribute(.backgroundColor, range: range)
+        }
+
+        mutable.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            if let color = value as? NSColor, !colorNeedsReplacement(color, isDark: isDark) {
+                return
+            }
+            mutable.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+        }
+
+        mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            guard let font = value as? NSFont, isHardToReadFont(font) else { return }
+            let traits = font.fontDescriptor.symbolicTraits
+            let isBold = traits.contains(.bold)
+            let isItalic = traits.contains(.italic)
+            let size = min(max(font.pointSize, 11), 15)
+            var newFont = NSFont.systemFont(ofSize: size, weight: isBold ? .semibold : .regular)
+            if isItalic {
+                newFont = NSFontManager.shared.convert(newFont, toHaveTrait: .italicFontMask)
+            }
+            mutable.addAttribute(.font, value: newFont, range: range)
+        }
+
+        return mutable
+    }
+
+    static func parseMarkdownTable(_ markdown: String) -> ParsedMarkdownTable? {
+        let lines = markdown
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        guard lines.count >= 2 else { return nil }
+
+        for index in 0..<(lines.count - 1) {
+            let headerLine = lines[index]
+            let separatorLine = lines[index + 1]
+            guard headerLine.contains("|"), separatorLine.contains("|"), separatorLine.contains("-") else {
+                continue
+            }
+
+            let headers = parseMarkdownTableRow(headerLine)
+            guard headers.count >= 2 else { continue }
+
+            let separatorCells = parseMarkdownTableRow(separatorLine)
+            guard separatorCells.count == headers.count,
+                  separatorCells.allSatisfy(isMarkdownTableSeparatorCell) else {
+                continue
+            }
+
+            var rows: [[String]] = []
+            var rowIndex = index + 2
+            while rowIndex < lines.count {
+                let line = lines[rowIndex]
+                guard line.contains("|") else { break }
+                let row = parseMarkdownTableRow(line)
+                guard !row.isEmpty else { break }
+                rows.append(row)
+                rowIndex += 1
+            }
+
+            guard !rows.isEmpty else { continue }
+            return ParsedMarkdownTable(headers: headers, rows: rows)
+        }
+
+        return nil
     }
 
     static func markdownPlainText(for item: ClipboardItem) -> String? {
@@ -150,5 +241,39 @@ enum RichContentRenderer {
         options.interpretedSyntax = syntax
         options.failurePolicy = .returnPartiallyParsedIfPossible
         return options
+    }
+
+    private static func parseMarkdownTableRow(_ line: String) -> [String] {
+        var trimmed = line
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func isMarkdownTableSeparatorCell(_ cell: String) -> Bool {
+        guard !cell.isEmpty else { return false }
+        return cell.allSatisfy { $0 == "-" || $0 == ":" || $0 == " " }
+    }
+
+    private static func colorNeedsReplacement(_ color: NSColor, isDark: Bool) -> Bool {
+        guard let resolved = color.usingColorSpace(.sRGB) else { return true }
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        guard alpha > 0.05 else { return true }
+
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        return isDark ? luminance < 0.42 : luminance > 0.72
+    }
+
+    private static func isHardToReadFont(_ font: NSFont) -> Bool {
+        let name = font.fontName.lowercased()
+        let family = font.familyName?.lowercased() ?? name
+        let serifMarkers = ["times", "georgia", "serif", "palatino", "garamond", "baskerville"]
+        return serifMarkers.contains { name.contains($0) || family.contains($0) }
     }
 }
