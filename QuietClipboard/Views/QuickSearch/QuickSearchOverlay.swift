@@ -4,6 +4,7 @@ import AppKit
 
 struct QuickSearchOverlay: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var monitor: ClipboardMonitor
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var allItems: [ClipboardItem]
     @Query(sort: \Category.sortOrder) private var categories: [Category]
@@ -17,6 +18,7 @@ struct QuickSearchOverlay: View {
     @State private var lastMouseLocation: CGPoint = .zero
     @State private var previewWidth: CGFloat = Preferences.quickSearchPreviewWidth
     @State private var previewEnabled: Bool = Preferences.quickSearchPreviewEnabled
+    @State private var popupViewMode: PopupViewMode = .list
     @FocusState private var searchFocused: Bool
 
     var onPaste: (ClipboardItem) -> Void
@@ -34,16 +36,12 @@ struct QuickSearchOverlay: View {
             items = items.filter { $0.categories.contains { $0.id == cid } }
         }
         if !q.isEmpty {
-            items = items.filter { item in
-                (item.textContent?.lowercased().contains(q) ?? false)
-                    || (item.title?.lowercased().contains(q) ?? false)
-                    || (item.ocrText?.lowercased().contains(q) ?? false)
-                    || (item.linkPreviewTitle?.lowercased().contains(q) ?? false)
-                    || (item.sourceAppName?.lowercased().contains(q) ?? false)
-                    || (item.colorHex?.lowercased().contains(q) ?? false)
-            }
+            items = items.filter { ClipSearchMatcher.matches($0, query: q) }
         }
-        return Array(items.prefix(50))
+        return items
+            .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
+            .prefix(50)
+            .map { $0 }
     }
 
     private var previewItem: ClipboardItem? {
@@ -58,7 +56,7 @@ struct QuickSearchOverlay: View {
                         .frame(maxWidth: .infinity)
                     if previewEnabled {
                         splitter
-                        PreviewPane(item: previewItem)
+                        PreviewPane(item: previewItem, coordinator: coordinator)
                             .frame(width: clampedPreviewWidth(geo.size.width))
                     }
                 }
@@ -78,6 +76,14 @@ struct QuickSearchOverlay: View {
             selectedIndex = 0
             previewEnabled = Preferences.quickSearchPreviewEnabled
             previewWidth = Preferences.quickSearchPreviewWidth
+            popupViewMode = Preferences.popupViewMode
+            sanitizeActiveFilters()
+        }
+        .onChange(of: popupViewMode) { _, new in
+            Preferences.popupViewMode = new
+        }
+        .onReceive(coordinator.objectWillChange) { _ in
+            sanitizeActiveFilters()
         }
         .task {
             try? await Task.sleep(nanoseconds: 60_000_000)
@@ -129,59 +135,53 @@ struct QuickSearchOverlay: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, item in
-                                Button {
-                                    onPaste(item)
-                                } label: {
-                                    ResultRow(item: item, isSelected: idx == selectedIndex)
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(Rectangle())
-                                .pointerCursor()
-                                .id(item.id)
-                                .onHover { inside in
-                                    guard inside, selectedIndex != idx else { return }
-                                    let now = NSEvent.mouseLocation
-                                    if abs(now.x - lastMouseLocation.x) < 1.5,
-                                       abs(now.y - lastMouseLocation.y) < 1.5 { return }
-                                    lastMouseLocation = now
-                                    selectedIndex = idx
-                                }
-                            }
-                        }
-                        .padding(8)
+                PopupItemsView(
+                    items: filtered,
+                    viewMode: popupViewMode,
+                    selectedIndex: selectedIndex,
+                    keyboardTick: keyboardTick,
+                    onActivate: { onPaste($0) },
+                    onDelete: { deleteItem($0) },
+                    onToggleFavorite: { toggleFavorite($0) },
+                    onHoverIndex: { idx in
+                        guard selectedIndex != idx else { return }
+                        let now = NSEvent.mouseLocation
+                        if abs(now.x - lastMouseLocation.x) < 1.5,
+                           abs(now.y - lastMouseLocation.y) < 1.5 { return }
+                        lastMouseLocation = now
+                        selectedIndex = idx
                     }
-                    .onChange(of: keyboardTick) { _, _ in
-                        guard filtered.indices.contains(selectedIndex) else { return }
-                        withAnimation { proxy.scrollTo(filtered[selectedIndex].id, anchor: .center) }
-                    }
-                }
+                )
             }
         }
     }
 
     private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let enabled = QuickSearchFilterPreferences.enabledFilters
+        let showCategories = QuickSearchFilterPreferences.showUserCategories
+        return HorizontalScrollBar {
             HStack(spacing: 6) {
                 FilterChip(label: "All", systemImage: "tray",
                            isSelected: typeFilter == nil && !favoritesOnly && categoryFilter == nil) {
                     typeFilter = nil; favoritesOnly = false; categoryFilter = nil
-                }
-                FilterChip(label: "Favorites", systemImage: "star.fill", isSelected: favoritesOnly) {
-                    favoritesOnly.toggle()
                     selectedIndex = 0
                 }
-                ForEach([ClipboardContentType.text, .image, .link, .code, .color, .file, .screenshot], id: \.self) { t in
-                    FilterChip(label: t.displayName, systemImage: t.systemImage,
-                               isSelected: typeFilter == t) {
-                        typeFilter = (typeFilter == t) ? nil : t
+                if enabled.contains(.favorites) {
+                    FilterChip(label: "Favorites", systemImage: "star.fill", isSelected: favoritesOnly) {
+                        favoritesOnly.toggle()
                         selectedIndex = 0
                     }
                 }
-                if !categories.isEmpty {
+                ForEach(QuickSearchPopupFilter.allCases.filter { $0 != .favorites && enabled.contains($0) }) { filter in
+                    if let t = filter.contentType {
+                        FilterChip(label: filter.displayName, systemImage: filter.systemImage,
+                                   isSelected: typeFilter == t) {
+                            typeFilter = (typeFilter == t) ? nil : t
+                            selectedIndex = 0
+                        }
+                    }
+                }
+                if showCategories, !categories.isEmpty {
                     Rectangle().fill(Color.secondary.opacity(0.25))
                         .frame(width: 1, height: 16)
                     ForEach(categories) { c in
@@ -193,8 +193,27 @@ struct QuickSearchOverlay: View {
                     }
                 }
             }
-            .padding(.horizontal, 2)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 4)
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: 34)
+    }
+
+    private func sanitizeActiveFilters() {
+        let enabled = QuickSearchFilterPreferences.enabledFilters
+        if favoritesOnly, !enabled.contains(.favorites) {
+            favoritesOnly = false
+        }
+        if let t = typeFilter,
+           let chip = QuickSearchPopupFilter.from(contentType: t),
+           !enabled.contains(chip) {
+            typeFilter = nil
+        }
+        if categoryFilter != nil, !QuickSearchFilterPreferences.showUserCategories {
+            categoryFilter = nil
+        }
+        selectedIndex = min(selectedIndex, max(0, filtered.count - 1))
     }
 
     private func clampedPreviewWidth(_ total: CGFloat) -> CGFloat {
@@ -210,6 +229,7 @@ struct QuickSearchOverlay: View {
 
     private var bottomBar: some View {
         HStack(spacing: 4) {
+            PopupViewModePicker(mode: $popupViewMode)
             BottomBarButton(label: "Library", systemImage: "books.vertical", action: onOpenLibrary)
             BottomBarButton(
                 label: monitor.isPaused ? "Resume" : "Pause",
@@ -240,7 +260,25 @@ struct QuickSearchOverlay: View {
 
     private func activate() {
         guard filtered.indices.contains(selectedIndex) else { return }
-        onPaste(filtered[selectedIndex])
+        let item = filtered[selectedIndex]
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        onPaste(item)
+    }
+
+    private func deleteItem(_ item: ClipboardItem) {
+        if let index = filtered.firstIndex(where: { $0.id == item.id }),
+           selectedIndex >= index, selectedIndex > 0 {
+            selectedIndex -= 1
+        }
+        context.delete(item)
+        try? context.save()
+        selectedIndex = min(selectedIndex, max(0, filtered.count - 1))
+    }
+
+    private func toggleFavorite(_ item: ClipboardItem) {
+        item.isFavorite.toggle()
+        item.modifiedAt = .now
+        try? context.save()
     }
 }
 
@@ -287,53 +325,22 @@ private struct FilterChip: View {
     }
 }
 
-private struct ResultRow: View {
-    let item: ClipboardItem
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ClipboardItemPreview(item: item)
-                .frame(width: 50, height: 50)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title ?? item.textContent ?? "Untitled")
-                    .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Image(systemName: item.contentType.systemImage).font(.caption2)
-                    Text(item.contentType.displayName).font(.caption2)
-                    Text("·").font(.caption2)
-                    Text(item.sourceAppName ?? "Unknown").font(.caption2)
-                    Text("·").font(.caption2)
-                    Text(DateFormatting.relativeString(from: item.createdAt)).font(.caption2)
-                }
-                .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if item.isFavorite {
-                Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
-            }
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
-        )
-    }
-}
-
 private struct PreviewPane: View {
     let item: ClipboardItem?
+    @ObservedObject var coordinator: AppCoordinator
 
     var body: some View {
         if let item {
             VStack(alignment: .leading, spacing: 12) {
-                preview(for: item)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SensitiveContentGate(item: item) {
+                    preview(for: item)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 metadata(for: item)
             }
             .padding(16)
+            .environmentObject(coordinator)
         } else {
             VStack {
                 Image(systemName: "tray").font(.largeTitle).foregroundStyle(.secondary)
@@ -360,19 +367,28 @@ private struct PreviewPane: View {
                 c.clipShape(RoundedRectangle(cornerRadius: 6))
             } else { fallback(item) }
         case .link:
-            VStack(alignment: .leading, spacing: 8) {
-                Text(item.linkPreviewTitle ?? item.title ?? "").font(.headline)
-                Text(item.linkPreviewDescription ?? "").font(.caption).foregroundStyle(.secondary)
-                Text(item.textContent ?? "").font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
-                Spacer()
+            LinkPreviewCard(item: item)
+        case .richText, .markdown:
+            RichContentPreview(item: item)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .text:
+            if RichContentRenderer.previewKind(for: item) == .markdown {
+                RichContentPreview(item: item)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                plainTextPreview(item)
             }
         default:
-            ScrollView {
-                Text(item.textContent ?? item.title ?? "")
-                    .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
+            plainTextPreview(item)
+        }
+    }
+
+    private func plainTextPreview(_ item: ClipboardItem) -> some View {
+        ScrollView {
+            Text(item.textContent ?? item.title ?? "")
+                .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
     }
 
@@ -383,22 +399,18 @@ private struct PreviewPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private func metadata(for item: ClipboardItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text("Application:").foregroundStyle(.secondary)
-                Text(item.sourceAppName ?? "Unknown").bold()
-            }
-            HStack(spacing: 6) {
-                Text("Copied:").foregroundStyle(.secondary)
-                Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
-            }
-            HStack(spacing: 6) {
-                Text("Type:").foregroundStyle(.secondary)
-                Text(item.contentType.displayName)
+        if item.isSensitive, !coordinator.isSensitiveRevealed(item.id) {
+            Text("Reveal to view metadata and copy.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                StructuredDataBadgeRow(item: item, compact: true)
+                ClipMetadataView(item: item)
             }
         }
-        .font(.callout)
     }
 }
 

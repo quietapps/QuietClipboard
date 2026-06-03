@@ -75,7 +75,9 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
     private func installDismissMonitors() {
         removeDismissMonitors()
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            self?.hide()
+            guard let self, let panel = self.panel, panel.isVisible else { return }
+            if panel.frame.contains(NSEvent.mouseLocation) { return }
+            self.hide()
         }
         appResignObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
@@ -147,7 +149,8 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
         case .cursor:
             let p = NSEvent.mouseLocation
             let s = screen(containing: p)
-            let origin = NSPoint(x: p.x - size.width / 2, y: p.y - size.height / 2)
+            // Frame origin is bottom-left; place top-left of panel at cursor.
+            let origin = NSPoint(x: p.x, y: p.y - size.height)
             return clamp(origin, in: s)
         case .menuIcon:
             if let frame = menuIconScreenFrame() {

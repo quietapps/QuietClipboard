@@ -73,35 +73,33 @@ enum CodeHighlighter {
 
     static func attributedString(for source: String, language: CodeLanguage) -> AttributedString {
         let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        var attr = AttributedString(source)
-        attr.font = .system(.body, design: .monospaced)
         let keywords = keywordsByLang[language] ?? []
 
-        var ns = NSMutableAttributedString(string: source, attributes: [
+        let text = NSMutableAttributedString(string: source, attributes: [
             .font: baseFont,
             .foregroundColor: NSColor.labelColor
         ])
 
         for kw in keywords {
             let pattern = "\\b" + NSRegularExpression.escapedPattern(for: kw) + "\\b"
-            apply(pattern: pattern, options: [], color: .systemPurple, to: ns)
+            apply(pattern: pattern, options: [], color: .systemPurple, to: text)
         }
 
-        apply(pattern: "\"[^\"\\n]*\"", options: [], color: .systemRed, to: ns)
-        apply(pattern: "'[^'\\n]*'", options: [], color: .systemRed, to: ns)
-        apply(pattern: "//[^\\n]*", options: [], color: .secondaryLabelColor, to: ns)
-        apply(pattern: "#[^\\n]*", options: [], color: .secondaryLabelColor, to: ns)
-        apply(pattern: "\\b\\d+(\\.\\d+)?\\b", options: [], color: .systemOrange, to: ns)
+        apply(pattern: "\"[^\"\\n]*\"", options: [], color: .systemRed, to: text)
+        apply(pattern: "'[^'\\n]*'", options: [], color: .systemRed, to: text)
+        apply(pattern: "//[^\\n]*", options: [], color: .secondaryLabelColor, to: text)
+        apply(pattern: "#[^\\n]*", options: [], color: .secondaryLabelColor, to: text)
+        apply(pattern: "\\b\\d+(\\.\\d+)?\\b", options: [], color: .systemOrange, to: text)
 
-        return AttributedString(ns)
+        return AttributedString(text)
     }
 
-    private static func apply(pattern: String, options: NSRegularExpression.Options, color: NSColor, to ns: NSMutableAttributedString) {
+    private static func apply(pattern: String, options: NSRegularExpression.Options, color: NSColor, to text: NSMutableAttributedString) {
         guard let re = try? NSRegularExpression(pattern: pattern, options: options) else { return }
-        let range = NSRange(location: 0, length: ns.length)
-        re.enumerateMatches(in: ns.string, range: range) { match, _, _ in
+        let range = NSRange(location: 0, length: text.length)
+        re.enumerateMatches(in: text.string, range: range) { match, _, _ in
             if let r = match?.range {
-                ns.addAttribute(.foregroundColor, value: color, range: r)
+                text.addAttribute(.foregroundColor, value: color, range: r)
             }
         }
     }

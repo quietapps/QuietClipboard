@@ -22,6 +22,10 @@ struct ExportedItem: Codable {
     var isSensitive: Bool
     var createdAt: Date
     var modifiedAt: Date
+    var copyCount: Int?
+    var firstCopiedAt: Date?
+    var lastCopiedAt: Date?
+    var contentHash: String?
 }
 
 struct ExportedCategory: Codable {
@@ -68,7 +72,11 @@ enum ExportImportService {
                 isFavorite: item.isFavorite,
                 isSensitive: item.isSensitive,
                 createdAt: item.createdAt,
-                modifiedAt: item.modifiedAt
+                modifiedAt: item.modifiedAt,
+                copyCount: item.copyCount,
+                firstCopiedAt: item.firstCopiedAt,
+                lastCopiedAt: item.lastCopiedAt,
+                contentHash: item.contentHash
             )
         }
 
@@ -142,6 +150,10 @@ enum ExportImportService {
             item.linkPreviewDescription = ei.linkPreviewDescription
             item.linkPreviewImageData = ei.linkPreviewImageBase64.flatMap { Data(base64Encoded: $0) }
             item.modifiedAt = ei.modifiedAt
+            item.contentHash = ei.contentHash ?? ""
+            item.copyCount = ei.copyCount ?? 1
+            item.firstCopiedAt = ei.firstCopiedAt ?? ei.createdAt
+            item.lastCopiedAt = ei.lastCopiedAt ?? ei.createdAt
             context.insert(item)
             imported += 1
         }

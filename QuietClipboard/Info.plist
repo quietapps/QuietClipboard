@@ -31,5 +31,9 @@
 	</dict>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Add contacts from detected emails and phone numbers on your clipboard.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Create reminders from detected dates on your clipboard.</string>
 </dict>
 </plist>

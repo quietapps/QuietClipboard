@@ -19,6 +19,8 @@ struct LibrarySidebar: View {
                     count: items.filter(\.isFavorite).count)
                 row(.screenshots, label: "Screenshots", icon: "camera.viewfinder",
                     count: items.filter { $0.contentType == .screenshot || $0.contentType == .image }.count)
+                row(.timeline, label: "Timeline", icon: "clock",
+                    count: items.filter { Calendar.current.isDateInToday($0.effectiveLastCopiedAt) }.count)
             }
             Section {
                 ForEach(categories) { cat in

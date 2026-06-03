@@ -19,6 +19,9 @@ enum ContentTypeDetector {
             if isURL(trimmed) {
                 return .link
             }
+            if looksLikeMarkdown(trimmed) {
+                return .markdown
+            }
             if looksLikeCode(trimmed) {
                 return .code
             }
@@ -38,6 +41,24 @@ enum ContentTypeDetector {
             return false
         }
         return URL(string: s) != nil
+    }
+
+    static func looksLikeMarkdown(_ s: String) -> Bool {
+        guard s.count >= 12, s.count <= 500_000 else { return false }
+        var score = 0
+        if s.contains("```") { score += 2 }
+        if s.contains("\n# ") || s.hasPrefix("# ") { score += 2 }
+        if s.contains("**") || s.contains("__") { score += 1 }
+        if s.contains("](") && (s.contains("http://") || s.contains("https://")) { score += 2 }
+        let lines = s.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.contains(where: { line in
+            line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("> ")
+                || line.hasPrefix("1. ")
+        }) {
+            score += 1
+        }
+        if s.contains("\n|") && s.filter({ $0 == "|" }).count >= 4 { score += 1 }
+        return score >= 2
     }
 
     static func looksLikeCode(_ s: String) -> Bool {

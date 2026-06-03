@@ -5,22 +5,36 @@ import CryptoKit
 
 struct ItemDetailView: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @EnvironmentObject private var monitor: ClipboardMonitor
     @Bindable var item: ClipboardItem
 
     @State private var editedText: String = ""
     @State private var isEditing: Bool = false
+    @State private var showCopyHistory: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
+            CategorySuggestionBanner(item: item)
+            if item.effectiveCopyCount > 1 {
+                duplicateNotice
+            }
             ScrollView {
-                content
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                SensitiveContentGate(item: item) {
+                    content
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
-            metadata
+            if showCopyHistory, item.effectiveCopyCount > 1 {
+                copyHistorySection
+                Divider()
+            }
+            ClipMetadataView(item: item)
+                .padding(10)
         }
         .onAppear {
             editedText = item.textContent ?? ""
@@ -28,20 +42,59 @@ struct ItemDetailView: View {
         .onChange(of: item.id) { _, _ in
             editedText = item.textContent ?? ""
             isEditing = false
+            showCopyHistory = false
+            coordinator.concealSensitive(item.id)
         }
+    }
+
+    private var duplicateNotice: some View {
+        HStack {
+            DuplicateCopyBadge(item: item)
+            Spacer()
+            Button(showCopyHistory ? "Hide copies" : "Show copies") {
+                showCopyHistory.toggle()
+            }
+            .font(.caption)
+            .buttonStyle(.link)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private var copyHistorySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Copy history").font(.caption.bold())
+            ForEach(item.sortedCopyEvents()) { event in
+                HStack {
+                    Text(event.copiedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text("·")
+                    Text(event.sourceAppName ?? "Unknown")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: item.contentType.systemImage)
-            Text(item.title ?? item.contentType.displayName)
-                .font(.headline)
-                .lineLimit(1)
+            Image(systemName: item.isSensitive && !coordinator.isSensitiveRevealed(item.id)
+                  ? "lock.fill" : item.contentType.systemImage)
+            SensitiveClipLabel(item: item, font: .headline, lineLimit: 1)
             Spacer()
             Button {
-                PasteboardHelper.write(item, to: .general)
+                if coordinator.shouldProceedWithSensitiveAction(for: item) {
+                    ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+                }
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label(
+                    item.isSensitive && !coordinator.isSensitiveRevealed(item.id) ? "Reveal" : "Copy",
+                    systemImage: item.isSensitive && !coordinator.isSensitiveRevealed(item.id)
+                        ? "lock.open" : "doc.on.doc"
+                )
             }
             .pointerCursor()
             Button {
@@ -55,6 +108,7 @@ struct ItemDetailView: View {
             .pointerCursor()
             CategoryAssignmentMenu(item: item)
                 .pointerCursor()
+            exportMenu
             Button(role: .destructive) {
                 context.delete(item)
                 try? context.save()
@@ -96,24 +150,35 @@ struct ItemDetailView: View {
                 }
             }
         case .link:
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    LinkFaviconView(item: item, iconSize: 44)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let title = item.linkPreviewTitle {
+                            Text(title).font(.title3.bold())
+                        }
+                        if let host = LinkPreviewService.displayHost(from: item.textContent) {
+                            Text(host).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let desc = item.linkPreviewDescription, !desc.isEmpty {
+                    Text(desc).foregroundStyle(.secondary)
+                }
                 if let data = item.linkPreviewImageData, let img = NSImage(data: data) {
                     Image(nsImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 480)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                if let title = item.linkPreviewTitle {
-                    Text(title).font(.title3.bold())
-                }
-                if let desc = item.linkPreviewDescription {
-                    Text(desc).foregroundStyle(.secondary)
+                        .frame(maxWidth: 480, maxHeight: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 if let s = item.textContent, let url = URL(string: s) {
                     Link(s, destination: url).font(.callout)
                 }
             }
+        case .richText, .markdown:
+            RichContentPreview(item: item)
         case .code:
             let lang = CodeHighlighter.detectLanguage(item.textContent ?? "")
             VStack(alignment: .leading, spacing: 8) {
@@ -136,53 +201,76 @@ struct ItemDetailView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+        case .text:
+            if RichContentRenderer.previewKind(for: item) == .markdown {
+                RichContentPreview(item: item)
+            } else if isEditing {
+                textEditorBlock
+            } else {
+                plainTextBlock
+            }
         default:
             if isEditing {
-                TextEditor(text: $editedText)
-                    .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                    .frame(minHeight: 200)
-                HStack {
-                    Button("Save") {
-                        let data = Data(editedText.utf8)
-                        item.textContent = editedText
-                        item.content = data
-                        item.contentHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-                        item.modifiedAt = .now
-                        try? context.save()
-                        isEditing = false
-                    }
-                    Button("Cancel") {
-                        editedText = item.textContent ?? ""
-                        isEditing = false
-                    }
-                }
+                textEditorBlock
             } else {
-                Text(item.textContent ?? "")
-                    .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                    .textSelection(.enabled)
-                Button("Edit") { isEditing = true }
+                plainTextBlock
             }
         }
     }
 
-    private var metadata: some View {
-        HStack(spacing: 16) {
-            metaItem("App", item.sourceAppName ?? "—")
-            metaItem("Type", item.contentType.displayName)
-            if let size = item.fileSize {
-                metaItem("Size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+    private var exportMenu: some View {
+        Menu {
+            if RichContentRenderer.canExportMarkdown(item) {
+                Button("Export as Markdown…") {
+                    ClipExportService.presentSavePanel(for: item, format: .markdown)
+                }
             }
-            metaItem("Copied", item.createdAt.formatted(date: .abbreviated, time: .shortened))
+            if RichContentRenderer.canExportRTF(item) {
+                Button("Export as RTF…") {
+                    ClipExportService.presentSavePanel(for: item, format: .rtf)
+                }
+            }
+        } label: {
+            Image(systemName: "square.and.arrow.up")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(10)
+        .menuStyle(.borderlessButton)
+        .pointerCursor()
+        .disabled(!RichContentRenderer.canExportMarkdown(item) && !RichContentRenderer.canExportRTF(item))
     }
 
-    private func metaItem(_ k: String, _ v: String) -> some View {
-        VStack(alignment: .leading) {
-            Text(k).font(.caption2.bold())
-            Text(v)
+    private var plainTextBlock: some View {
+        Group {
+            Text(item.textContent ?? "")
+                .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
+                .textSelection(.enabled)
+            Button("Edit") { isEditing = true }
+        }
+    }
+
+    @ViewBuilder
+    private var textEditorBlock: some View {
+        TextEditor(text: $editedText)
+            .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
+            .frame(minHeight: 200)
+        HStack {
+            Button("Save") {
+                let data = Data(editedText.utf8)
+                item.textContent = editedText
+                item.content = data
+                item.contentHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                item.normalizedFingerprint = DuplicateDetectionService.normalizedFingerprint(
+                    text: editedText,
+                    contentType: item.contentType,
+                    contentHash: item.contentHash
+                )
+                item.modifiedAt = .now
+                try? context.save()
+                isEditing = false
+            }
+            Button("Cancel") {
+                editedText = item.textContent ?? ""
+                isEditing = false
+            }
         }
     }
 }

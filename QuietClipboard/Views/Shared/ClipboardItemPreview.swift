@@ -4,6 +4,20 @@ struct ClipboardItemPreview: View {
     let item: ClipboardItem
 
     var body: some View {
+        SensitiveContentGate(item: item) {
+            previewContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+        )
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
         Group {
             switch item.contentType {
             case .image, .screenshot:
@@ -36,17 +50,8 @@ struct ClipboardItemPreview: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .link:
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.linkPreviewTitle ?? item.title ?? item.textContent ?? "")
-                        .font(.caption.bold())
-                        .lineLimit(2)
-                    Text(item.textContent ?? "")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .padding(6)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                LinkFaviconView(item: item, iconSize: 36)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             default:
                 Text(item.textContent ?? item.title ?? "")
                     .font(.system(.caption, design: item.contentType == .code ? .monospaced : .default))
@@ -56,13 +61,6 @@ struct ClipboardItemPreview: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
-        )
     }
 
     private var placeholder: some View {

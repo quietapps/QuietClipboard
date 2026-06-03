@@ -159,6 +159,56 @@ enum Preferences {
         }
     }
 
+    @MainActor static var autoCategorizationEnabled: Bool {
+        get { defaults.object(forKey: "QC.AutoCategorize") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.AutoCategorize") }
+    }
+
+    @MainActor static var autoCategorizationML: Bool {
+        get { defaults.object(forKey: "QC.AutoCategorizeML") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.AutoCategorizeML") }
+    }
+
+    @MainActor static var collapseDuplicates: Bool {
+        get { defaults.object(forKey: "QC.CollapseDuplicates") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.CollapseDuplicates") }
+    }
+
+    @MainActor static var captureUniversalClipboard: Bool {
+        get {
+            if defaults.object(forKey: "QC.CaptureUniversalClipboard") == nil { return true }
+            return defaults.bool(forKey: "QC.CaptureUniversalClipboard")
+        }
+        set { defaults.set(newValue, forKey: "QC.CaptureUniversalClipboard") }
+    }
+
+    @MainActor static var clipPreviewStyle: ClipPreviewStyle {
+        get {
+            guard let raw = defaults.string(forKey: "QC.ClipPreviewStyle"),
+                  let v = ClipPreviewStyle(rawValue: raw) else { return .rich }
+            return v
+        }
+        set { defaults.set(newValue.rawValue, forKey: "QC.ClipPreviewStyle") }
+    }
+
+    @MainActor static var popupViewMode: PopupViewMode {
+        get {
+            guard let raw = defaults.string(forKey: "QC.PopupViewMode"),
+                  let v = PopupViewMode(rawValue: raw) else { return .list }
+            return v
+        }
+        set { defaults.set(newValue.rawValue, forKey: "QC.PopupViewMode") }
+    }
+
+    @MainActor static var libraryGroupBy: LibraryGroupBy {
+        get {
+            guard let raw = defaults.string(forKey: "QC.LibraryGroupBy"),
+                  let v = LibraryGroupBy(rawValue: raw) else { return .contentType }
+            return v
+        }
+        set { defaults.set(newValue.rawValue, forKey: "QC.LibraryGroupBy") }
+    }
+
     @MainActor static var quickSearchLastOrigin: CGPoint? {
         get {
             guard let s = defaults.string(forKey: "QC.QSLastOrigin") else { return nil }

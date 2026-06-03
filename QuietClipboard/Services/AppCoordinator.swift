@@ -10,6 +10,7 @@ final class AppCoordinator: ObservableObject {
     let retention: RetentionManager
     @Published var shortcutSettings: ShortcutSettings
     @Published var isPaused: Bool = false
+    @Published private(set) var revealedSensitiveIDs: Set<UUID> = []
 
     private var quickSearch: FloatingPanelController<AnyView>?
     private var openWindowHandler: ((String) -> Void)?
@@ -31,10 +32,31 @@ final class AppCoordinator: ObservableObject {
         self.openWindowHandler = handler
     }
 
+    func isSensitiveRevealed(_ itemID: UUID) -> Bool {
+        revealedSensitiveIDs.contains(itemID)
+    }
+
+    func revealSensitive(_ itemID: UUID) {
+        guard !revealedSensitiveIDs.contains(itemID) else { return }
+        revealedSensitiveIDs.insert(itemID)
+    }
+
+    func concealSensitive(_ itemID: UUID) {
+        revealedSensitiveIDs.remove(itemID)
+    }
+
+    /// First activation on a hidden sensitive clip reveals only; returns whether the action should proceed.
+    func shouldProceedWithSensitiveAction(for item: ClipboardItem) -> Bool {
+        guard item.isSensitive, !isSensitiveRevealed(item.id) else { return true }
+        revealSensitive(item.id)
+        return false
+    }
+
     private var didBootstrap = false
     func bootstrap() {
         guard !didBootstrap else { return }
         didBootstrap = true
+        DataMigrationService.migrateIfNeeded(container: container)
         monitor.start()
         retention.start()
         ShortcutManager.shared.onAction = { [weak self] action in
@@ -48,8 +70,7 @@ final class AppCoordinator: ObservableObject {
         case .openQuickSearch:
             toggleQuickSearch()
         case .openLibrary:
-            NSApp.activate(ignoringOtherApps: true)
-            openWindowHandler?("library")
+            openLibraryWindow()
         case .toggleCapture:
             monitor.setPaused(!monitor.isPaused)
         default:
@@ -71,12 +92,11 @@ final class AppCoordinator: ObservableObject {
             quickSearch = FloatingPanelController(width: 1060, height: 480) { [weak self] in
                 AnyView(
                     QuickSearchOverlay(
-                        onPaste: { item in self?.paste(item) },
+                        onPaste: { item in self?.pasteFromQuickSearch(item) },
                         onDismiss: { self?.quickSearch?.hide() },
                         onOpenLibrary: {
                             self?.quickSearch?.hide()
-                            NSApp.activate(ignoringOtherApps: true)
-                            self?.openWindowHandler?("library")
+                            self?.openLibraryWindow()
                         },
                         onTogglePause: { self?.monitor.setPaused(!(self?.monitor.isPaused ?? false)) },
                         onQuit: { NSApp.terminate(nil) }
@@ -90,19 +110,28 @@ final class AppCoordinator: ObservableObject {
         quickSearch?.toggle()
     }
 
-    private func paste(_ item: ClipboardItem) {
+    func pasteFromQuickSearch(_ item: ClipboardItem) {
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
         let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
         quickSearch?.hide()
+        let context = ModelContext(container)
+        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
         PasteSimulator.pasteAndRestore(item: item, priorApp: prior)
+    }
+
+    func openLibraryWindow() {
+        LibraryWindowPresenter.shared.present(coordinator: self)
     }
 
     private func pasteIndex(_ index: Int) {
         let context = ModelContext(container)
-        var desc = FetchDescriptor<ClipboardItem>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-        desc.fetchLimit = index + 1
-        let items = (try? context.fetch(desc)) ?? []
-        guard items.indices.contains(index) else { return }
+        let items = ((try? context.fetch(FetchDescriptor<ClipboardItem>())) ?? [])
+            .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
+        guard index < items.count else { return }
+        let item = items[index]
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
+        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
         let prior = PasteSimulator.capturedFrontmost()
-        PasteSimulator.pasteAndRestore(item: items[index], priorApp: prior)
+        PasteSimulator.pasteAndRestore(item: item, priorApp: prior)
     }
 }

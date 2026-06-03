@@ -4,7 +4,8 @@ import AppKit
 
 struct LibraryWindow: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject private var coordinator: AppCoordinator
+    @EnvironmentObject private var monitor: ClipboardMonitor
     @StateObject private var state = LibraryState()
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var allItems: [ClipboardItem]
     @Query private var categories: [Category]
@@ -13,7 +14,7 @@ struct LibraryWindow: View {
         var items = allItems
 
         switch state.selection {
-        case .history:
+        case .history, .timeline:
             break
         case .favorites:
             items = items.filter(\.isFavorite)
@@ -29,21 +30,14 @@ struct LibraryWindow: View {
 
         let q = state.search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
-            items = items.filter { item in
-                (item.textContent?.lowercased().contains(q) ?? false)
-                    || (item.title?.lowercased().contains(q) ?? false)
-                    || (item.ocrText?.lowercased().contains(q) ?? false)
-                    || (item.linkPreviewTitle?.lowercased().contains(q) ?? false)
-                    || (item.sourceAppName?.lowercased().contains(q) ?? false)
-                    || (item.colorHex?.lowercased().contains(q) ?? false)
-            }
+            items = items.filter { ClipSearchMatcher.matches($0, query: q) }
         }
 
         switch state.sort {
         case .dateDesc:
-            items.sort { $0.createdAt > $1.createdAt }
+            items.sort { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
         case .dateAsc:
-            items.sort { $0.createdAt < $1.createdAt }
+            items.sort { $0.effectiveLastCopiedAt < $1.effectiveLastCopiedAt }
         case .type:
             items.sort { $0.contentType.rawValue < $1.contentType.rawValue }
         case .size:
@@ -55,9 +49,23 @@ struct LibraryWindow: View {
         return items
     }
 
+    var displaySections: [LibrarySection] {
+        LibraryDisplayGrouping.sections(
+            from: filtered,
+            groupBy: state.groupBy,
+            categories: categories,
+            collapseNearDuplicates: Preferences.collapseDuplicates
+        )
+    }
+
     var selectedItem: ClipboardItem? {
         guard let id = state.selectedItemID else { return nil }
         return allItems.first(where: { $0.id == id })
+    }
+
+    private func copyFromLibrary(_ item: ClipboardItem) {
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
     }
 
     var body: some View {
@@ -71,17 +79,27 @@ struct LibraryWindow: View {
                 Divider()
                 if filtered.isEmpty {
                     emptyState
-                } else if state.view == .grid {
-                    ClipboardItemGrid(
+                } else if state.view == .timeline || state.selection == .timeline {
+                    ClipboardTimelineView(
                         items: filtered,
                         selectedID: $state.selectedItemID,
-                        onActivate: { PasteboardHelper.write($0, to: .general) }
+                        onActivate: copyFromLibrary
+                    )
+                } else if state.view == .grid {
+                    ClipboardItemGrid(
+                        sections: displaySections,
+                        selectedID: $state.selectedItemID,
+                        expandedGroups: $state.expandedDuplicateGroups,
+                        expandedCopyHistories: $state.expandedCopyHistories,
+                        onActivate: copyFromLibrary
                     )
                 } else {
                     ClipboardItemList(
-                        items: filtered,
+                        sections: displaySections,
                         selectedID: $state.selectedItemID,
-                        onActivate: { PasteboardHelper.write($0, to: .general) }
+                        expandedGroups: $state.expandedDuplicateGroups,
+                        expandedCopyHistories: $state.expandedCopyHistories,
+                        onActivate: copyFromLibrary
                     )
                 }
             }
@@ -97,6 +115,16 @@ struct LibraryWindow: View {
         }
         .frame(minWidth: 900, minHeight: 600)
         .navigationTitle("Quiet Clipboard")
+        .onAppear {
+            state.groupBy = Preferences.libraryGroupBy
+        }
+        .onChange(of: state.selection) { _, new in
+            if new == .timeline {
+                state.view = .timeline
+            } else if state.view == .timeline {
+                state.view = .grid
+            }
+        }
     }
 
     private var toolbar: some View {
@@ -129,6 +157,17 @@ struct LibraryWindow: View {
             .pickerStyle(.menu)
             .frame(maxWidth: 130)
 
+            Picker("Group", selection: $state.groupBy) {
+                ForEach(LibraryGroupBy.allCases) { g in
+                    Text(g.rawValue).tag(g)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 120)
+            .onChange(of: state.groupBy) { _, new in
+                Preferences.libraryGroupBy = new
+            }
+
             Spacer()
 
             Picker("View", selection: $state.view) {
@@ -137,12 +176,11 @@ struct LibraryWindow: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 80)
+            .frame(width: state.view == .timeline ? 120 : 100)
             .labelsHidden()
 
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
+                SettingsWindowOpener.open()
             } label: {
                 Image(systemName: "gearshape")
             }

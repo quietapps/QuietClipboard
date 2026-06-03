@@ -24,7 +24,17 @@ final class ClipboardItem {
     var createdAt: Date
     var modifiedAt: Date
 
+    var copyCount: Int = 1
+    var firstCopiedAt: Date?
+    var lastCopiedAt: Date?
+    var normalizedFingerprint: String = ""
+    var duplicateGroupID: UUID?
+    var pendingSuggestionsJSON: String?
+    /// JSON-encoded `StructuredDataMatch` when clip is a single structured value.
+    var structuredDataJSON: String?
+
     @Relationship(inverse: \Category.items) var categories: [Category]
+    @Relationship(deleteRule: .cascade, inverse: \ClipboardCopyEvent.item) var copyEvents: [ClipboardCopyEvent]
 
     var contentType: ClipboardContentType {
         get { ClipboardContentType(rawValue: contentTypeRaw) ?? .other }
@@ -64,6 +74,10 @@ final class ClipboardItem {
         self.isSensitive = isSensitive
         self.createdAt = createdAt
         self.modifiedAt = createdAt
+        self.firstCopiedAt = createdAt
+        self.lastCopiedAt = createdAt
+        self.copyCount = 1
         self.categories = []
+        self.copyEvents = []
     }
 }

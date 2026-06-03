@@ -6,6 +6,8 @@ struct LinkPreviewResult: Sendable {
     var title: String?
     var description: String?
     var imageData: Data?
+    /// Site favicon / touch icon from `LPLinkMetadata.iconProvider`.
+    var iconData: Data?
 }
 
 private actor LinkPreviewCache {
@@ -34,25 +36,54 @@ enum LinkPreviewService {
         }
         guard let metadata else { return nil }
 
+        var iconData = await loadImageData(metadata.iconProvider)
+        if iconData == nil {
+            iconData = await LinkFaviconResolver.fetchWithFallback(for: url)
+        }
         let imageData = await loadImageData(metadata.imageProvider)
         let result = LinkPreviewResult(
             title: metadata.title,
             description: metadata.value(forKey: "_summary") as? String,
-            imageData: imageData
+            imageData: imageData,
+            iconData: iconData
         )
         await cache.set(url, result)
         return result
     }
 
+    /// Favicon only (origin → path fallbacks). Use when enriching links after capture.
+    static func fetchFavicon(for url: URL) async -> Data? {
+        await LinkFaviconResolver.fetchWithFallback(for: url)
+    }
+
+    /// Host label for UI fallback when no favicon is cached (e.g. `apple.com`).
+    static func displayHost(from urlString: String?) -> String? {
+        guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: raw),
+              var host = url.host?.lowercased() else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host.isEmpty ? nil : host
+    }
+
+    static func faviconThumbnailData(from iconData: Data) -> Data? {
+        ThumbnailGenerator.faviconTile(from: iconData, canvasSize: 64)
+    }
+
     private static func loadImageData(_ provider: NSItemProvider?) async -> Data? {
         guard let provider else { return nil }
-        return await withCheckedContinuation { cont in
-            provider.loadDataRepresentation(forTypeIdentifier: "public.image") { data, _ in
-                if let data {
-                    cont.resume(returning: data)
-                } else {
-                    cont.resume(returning: nil)
-                }
+        let types = ["public.image", "public.png", "public.jpeg", "com.apple.icns"]
+        for typeId in types where provider.hasItemConformingToTypeIdentifier(typeId) {
+            if let data = await loadDataRepresentation(provider, typeId: typeId) {
+                return data
+            }
+        }
+        return await loadDataRepresentation(provider, typeId: "public.image")
+    }
+
+    private static func loadDataRepresentation(_ provider: NSItemProvider, typeId: String) async -> Data? {
+        await withCheckedContinuation { cont in
+            provider.loadDataRepresentation(forTypeIdentifier: typeId) { data, _ in
+                cont.resume(returning: data)
             }
         }
     }

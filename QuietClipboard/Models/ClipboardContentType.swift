@@ -3,6 +3,7 @@ import Foundation
 enum ClipboardContentType: String, Codable, CaseIterable, Identifiable {
     case text
     case richText
+    case markdown
     case image
     case screenshot
     case link
@@ -18,6 +19,7 @@ enum ClipboardContentType: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .text: return "Text"
         case .richText: return "Rich Text"
+        case .markdown: return "Markdown"
         case .image: return "Image"
         case .screenshot: return "Screenshot"
         case .link: return "Link"
@@ -33,6 +35,7 @@ enum ClipboardContentType: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .text: return "text.alignleft"
         case .richText: return "doc.richtext"
+        case .markdown: return "text.document"
         case .image: return "photo"
         case .screenshot: return "camera.viewfinder"
         case .link: return "link"

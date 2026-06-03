@@ -36,6 +36,12 @@ final class ClipboardMonitor: ObservableObject {
         isPaused = paused
     }
 
+    /// Call after the app copies an item to the pasteboard so the monitor does not double-count.
+    func acknowledgeUserCopy(contentHash: String) {
+        lastContentHash = contentHash
+        lastChangeCount = NSPasteboard.general.changeCount
+    }
+
     private func tick() async {
         let pb = NSPasteboard.general
         let current = pb.changeCount
@@ -48,12 +54,19 @@ final class ClipboardMonitor: ObservableObject {
 
         let snap = PasteboardHelper.snapshot(pb)
         if snap.isConcealed { return }
+        if snap.isTransient { return }
+        if snap.isUniversalClipboard, !Preferences.captureUniversalClipboard { return }
 
         let frontApp = NSWorkspace.shared.frontmostApplication
-        let bundleID = frontApp?.bundleIdentifier
-        let appName = frontApp?.localizedName
+        var bundleID = frontApp?.bundleIdentifier
+        var appName = frontApp?.localizedName
 
-        if let bid = bundleID, Preferences.excludedBundleIDs.contains(bid) { return }
+        if snap.isUniversalClipboard {
+            bundleID = UniversalClipboardBridge.syntheticBundleID
+            appName = snap.universalClipboardDeviceName ?? "iPhone/iPad"
+        } else if let bid = bundleID, Preferences.excludedBundleIDs.contains(bid) {
+            return
+        }
 
         await ingest(snap: snap, bundleID: bundleID, appName: appName)
     }
@@ -70,16 +83,22 @@ final class ClipboardMonitor: ObservableObject {
 
         let title = ContentTypeDetector.title(for: snap, type: type)
         let colorHex = type == .color ? ColorParsing.hexFrom(snap.string ?? "") : nil
+        let fingerprint = DuplicateDetectionService.normalizedFingerprint(
+            text: payload.text,
+            contentType: type,
+            contentHash: hash
+        )
 
-        var isSensitive = false
+        var detectedSensitive = false
         if Preferences.sensitiveDetectionEnabled {
             if let text = payload.text {
-                isSensitive = SensitiveDetector.isSensitive(text, isConcealed: snap.isConcealed)
+                detectedSensitive = SensitiveDetector.isSensitive(text, isConcealed: snap.isConcealed)
             } else if snap.isConcealed {
-                isSensitive = true
+                detectedSensitive = true
             }
-            if isSensitive, Preferences.sensitiveBehavior == .skip { return }
+            if detectedSensitive, Preferences.sensitiveBehavior == .skip { return }
         }
+        let isSensitive = detectedSensitive && Preferences.sensitiveBehavior == .saveHidden
 
         let context = ModelContext(modelContainer)
         var existingDesc = FetchDescriptor<ClipboardItem>(
@@ -89,13 +108,31 @@ final class ClipboardMonitor: ObservableObject {
 
         let resultID: UUID?
         let wasInsert: Bool
+        let now = Date.now
+
         if let existing = (try? context.fetch(existingDesc))?.first {
-            existing.createdAt = .now
-            existing.modifiedAt = .now
-            if existing.sourceAppBundleID == nil { existing.sourceAppBundleID = bundleID }
-            if existing.sourceAppName == nil { existing.sourceAppName = appName }
+            existing.copyCount += 1
+            existing.lastCopiedAt = now
+            existing.modifiedAt = now
+            if snap.isUniversalClipboard {
+                existing.sourceAppBundleID = bundleID
+                existing.sourceAppName = appName
+            } else {
+                if existing.sourceAppBundleID == nil { existing.sourceAppBundleID = bundleID }
+                if existing.sourceAppName == nil { existing.sourceAppName = appName }
+            }
+
+            let event = ClipboardCopyEvent(
+                copiedAt: now,
+                sourceAppBundleID: bundleID,
+                sourceAppName: appName
+            )
+            event.item = existing
+            existing.copyEvents.append(event)
+            context.insert(event)
+
             do { try context.save(); resultID = existing.id; wasInsert = false }
-            catch { NSLog("Reorder save failed: \(error)"); resultID = nil; wasInsert = false }
+            catch { NSLog("Duplicate save failed: \(error)"); resultID = nil; wasInsert = false }
         } else {
             let item = ClipboardItem(
                 content: payload.content,
@@ -111,7 +148,28 @@ final class ClipboardMonitor: ObservableObject {
                 fileMIMEType: payload.mime,
                 isSensitive: isSensitive
             )
+            item.normalizedFingerprint = fingerprint
+            item.applyStructuredDataDetection()
+
+            let event = ClipboardCopyEvent(
+                copiedAt: now,
+                sourceAppBundleID: bundleID,
+                sourceAppName: appName
+            )
+            event.item = item
+            item.copyEvents.append(event)
+            context.insert(event)
+
+            if Preferences.autoCategorizationEnabled {
+                let suggestions = CategorySuggestionService.suggest(for: item)
+                if !suggestions.isEmpty {
+                    item.setPendingSuggestions(suggestions)
+                }
+            }
+
+            DuplicateDetectionService.assignNearDuplicateGroup(item: item, context: context)
             context.insert(item)
+
             do { try context.save(); resultID = item.id; wasInsert = true }
             catch { NSLog("Insert save failed: \(error)"); resultID = nil; wasInsert = false }
         }
@@ -130,7 +188,12 @@ final class ClipboardMonitor: ObservableObject {
         switch type {
         case .image, .screenshot:
             if let ocr = await OCRService.recognizeText(in: payload.content) {
-                await applyUpdate(itemID: itemID) { $0.ocrText = ocr }
+                await applyUpdate(itemID: itemID) { item in
+                    item.ocrText = ocr
+                    if Preferences.autoCategorizationEnabled, item.pendingSuggestions.isEmpty {
+                        item.setPendingSuggestions(CategorySuggestionService.suggest(for: item))
+                    }
+                }
             }
         case .link:
             guard let s = snap.string,
@@ -143,6 +206,12 @@ final class ClipboardMonitor: ObservableObject {
                     $0.linkPreviewDescription = result.description
                     $0.linkPreviewImageData = result.imageData
                     if let t = result.title, !t.isEmpty { $0.title = t }
+                }
+            }
+            let iconData = await LinkPreviewService.fetchFavicon(for: url)
+            if let iconData {
+                await applyUpdate(itemID: itemID) {
+                    $0.thumbnailData = LinkPreviewService.faviconThumbnailData(from: iconData) ?? iconData
                 }
             }
         default:
@@ -196,7 +265,7 @@ final class ClipboardMonitor: ObservableObject {
                 return nil
             }
             return Payload(content: rtf, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/rtf")
-        case .text, .code, .link, .color, .svg, .other:
+        case .text, .markdown, .code, .link, .color, .svg, .other:
             guard let s = snap.string else { return nil }
             return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: "text/plain")
         }

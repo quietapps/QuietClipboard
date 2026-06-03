@@ -6,19 +6,18 @@ struct MenuBarPopover: View {
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var monitor: ClipboardMonitor
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
     @State private var search: String = ""
+    @State private var popupViewMode: PopupViewMode = .list
 
     var filtered: [ClipboardItem] {
         let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = Array(items.prefix(150))
-        guard !trimmed.isEmpty else { return Array(base.prefix(15)) }
-        return base.filter { item in
-            (item.textContent?.lowercased().contains(trimmed) ?? false)
-                || (item.title?.lowercased().contains(trimmed) ?? false)
-                || (item.sourceAppName?.lowercased().contains(trimmed) ?? false)
-        }
+        let base = items.sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
+        let limited = Array(base.prefix(150))
+        guard !trimmed.isEmpty else { return Array(limited.prefix(15)) }
+        return limited.filter { ClipSearchMatcher.matches($0, query: trimmed) }
         .prefix(15)
         .map { $0 }
     }
@@ -30,19 +29,20 @@ struct MenuBarPopover: View {
             if filtered.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(filtered) { item in
-                            ItemRow(item: item) { copy(item) }
-                        }
-                    }
-                    .padding(8)
-                }
+                PopupItemsView(
+                    items: filtered,
+                    viewMode: popupViewMode,
+                    onActivate: { copy($0) },
+                    onDelete: { deleteItem($0) },
+                    onToggleFavorite: { toggleFavorite($0) }
+                )
             }
             Divider()
             footer
         }
         .frame(width: 380, height: 480)
+        .onAppear { popupViewMode = Preferences.popupViewMode }
+        .onChange(of: popupViewMode) { _, new in Preferences.popupViewMode = new }
     }
 
     private var header: some View {
@@ -67,6 +67,8 @@ struct MenuBarPopover: View {
 
     private var footer: some View {
         HStack {
+            PopupViewModePicker(mode: $popupViewMode)
+
             Button {
                 monitor.setPaused(!monitor.isPaused)
             } label: {
@@ -77,8 +79,7 @@ struct MenuBarPopover: View {
             .pointerCursor()
 
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "library")
+                coordinator.openLibraryWindow()
             } label: {
                 Label("Library", systemImage: "tray.full")
             }
@@ -107,72 +108,22 @@ struct MenuBarPopover: View {
     }
 
     private func copy(_ item: ClipboardItem) {
-        PasteboardHelper.write(item, to: .general)
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+    }
+
+    private func deleteItem(_ item: ClipboardItem) {
+        context.delete(item)
+        try? context.save()
+    }
+
+    private func toggleFavorite(_ item: ClipboardItem) {
+        item.isFavorite.toggle()
+        item.modifiedAt = .now
+        try? context.save()
     }
 
     private func openOrRaiseSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let win = NSApp.windows.first(where: { isSettingsWindow($0) }) {
-            win.makeKeyAndOrderFront(nil)
-            return
-        }
-        openSettings()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if let win = NSApp.windows.first(where: { isSettingsWindow($0) }) {
-                win.makeKeyAndOrderFront(nil)
-            }
-        }
-    }
-
-    private func isSettingsWindow(_ win: NSWindow) -> Bool {
-        let id = win.identifier?.rawValue ?? ""
-        if id.lowercased().contains("settings") || id.lowercased().contains("preferences") {
-            return true
-        }
-        let title = win.title.lowercased()
-        return title.contains("settings") || title.contains("preferences")
-    }
-}
-
-private struct ItemRow: View {
-    let item: ClipboardItem
-    let onCopy: () -> Void
-
-    var body: some View {
-        Button(action: onCopy) {
-            HStack(spacing: 10) {
-                ClipboardItemPreview(item: item)
-                    .frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title ?? item.textContent ?? "Untitled")
-                        .lineLimit(1)
-                        .font(.system(.body, design: item.contentType == .code ? .monospaced : .default))
-                    HStack(spacing: 6) {
-                        Image(systemName: item.contentType.systemImage)
-                            .font(.caption2)
-                        Text(item.sourceAppName ?? "Unknown")
-                            .font(.caption2)
-                        Text("·").font(.caption2)
-                        Text(DateFormatting.relativeString(from: item.createdAt))
-                            .font(.caption2)
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if item.isFavorite {
-                    Image(systemName: "star.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                }
-            }
-            .padding(6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(0.001))
-        )
-        .pointerCursor()
+        SettingsWindowOpener.open(openSettings: openSettings)
     }
 }

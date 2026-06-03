@@ -8,7 +8,7 @@ struct QuietClipboardApp: App {
     @StateObject private var coordinator: AppCoordinator
 
     init() {
-        let schema = Schema([ClipboardItem.self, Category.self])
+        let schema = Schema([ClipboardItem.self, Category.self, ClipboardCopyEvent.self])
         let storeURL = SharedStore.storeURL()
         let config = ModelConfiguration(schema: schema, url: storeURL)
         do {
@@ -24,6 +24,9 @@ struct QuietClipboardApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPopover()
+                .background {
+                    WindowHandlerInstaller(coordinator: coordinator)
+                }
                 .environmentObject(coordinator)
                 .environmentObject(coordinator.monitor)
                 .modelContainer(coordinator.container)
@@ -34,20 +37,6 @@ struct QuietClipboardApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("QC Bridge", id: "qc-bridge") {
-            HiddenWindowBridge(coordinator: coordinator)
-        }
-        .defaultLaunchBehavior(.presented)
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-
-        Window("Quiet Clipboard", id: "library") {
-            LibraryWindow()
-                .environmentObject(coordinator)
-                .environmentObject(coordinator.monitor)
-                .modelContainer(coordinator.container)
-        }
-        .defaultSize(width: 1100, height: 720)
         .commands { CommandGroup(replacing: .newItem) {} }
 
         Settings {
@@ -60,55 +49,9 @@ struct QuietClipboardApp: App {
 
 }
 
-struct OpenWindowBridge: View {
-    let coordinator: AppCoordinator
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .onAppear {
-                coordinator.setOpenWindowHandler { id in openWindow(id: id) }
-            }
-    }
-}
-
-struct HiddenWindowBridge: View {
-    let coordinator: AppCoordinator
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Color.clear
-            .frame(width: 1, height: 1)
-            .background(BridgeWindowHider())
-            .onAppear {
-                coordinator.setOpenWindowHandler { id in openWindow(id: id) }
-            }
-    }
-}
-
-private struct BridgeWindowHider: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            guard let win = v.window else { return }
-            win.alphaValue = 0
-            win.ignoresMouseEvents = true
-            win.isExcludedFromWindowsMenu = true
-            win.setFrame(NSRect(x: -10000, y: -10000, width: 1, height: 1), display: false)
-            win.collectionBehavior = [.transient, .ignoresCycle]
-            win.standardWindowButton(.closeButton)?.isHidden = true
-            win.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            win.standardWindowButton(.zoomButton)?.isHidden = true
-            win.styleMask = [.borderless]
-        }
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
+    private var activationUpdatePending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -117,10 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let names: [Notification.Name] = [
             NSWindow.didBecomeKeyNotification,
             NSWindow.didBecomeMainNotification,
-            NSWindow.willCloseNotification,
-            NSWindow.didMiniaturizeNotification,
-            NSWindow.didDeminiaturizeNotification,
-            NSWindow.didChangeOcclusionStateNotification
+            NSWindow.willCloseNotification
         ]
         for name in names {
             let obs = nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -135,7 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleActivationUpdate() {
-        DispatchQueue.main.async { [weak self] in self?.updateActivationPolicy() }
+        guard !activationUpdatePending else { return }
+        activationUpdatePending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.activationUpdatePending = false
+            self.updateActivationPolicy()
+        }
     }
 
     private func updateActivationPolicy() {
@@ -145,8 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if cls.contains("StatusBar") || cls.contains("MenuBarExtra") || cls.contains("PopupMenu") {
                 return false
             }
-            if w.identifier?.rawValue == "qc-bridge" { return false }
             if w.alphaValue == 0 { return false }
+            if w.frame.width < 80 || w.frame.height < 80 { return false }
             return true
         }
         let target: NSApplication.ActivationPolicy = hasMainWindow ? .regular : .accessory
@@ -178,7 +124,7 @@ struct AppSettingsView: View {
                 .environmentObject(coordinator)
                 .tabItem { Label("Storage", systemImage: "internaldrive") }
         }
-        .frame(width: 580, height: 520)
+        .frame(width: 620, height: 580)
     }
 
     private var generalTab: some View {
@@ -193,6 +139,25 @@ struct AppSettingsView: View {
                     set: { monitor.setPaused($0) }
                 ))
             }
+            Section("Appearance") {
+                Picker("List previews", selection: Binding(
+                    get: { Preferences.clipPreviewStyle },
+                    set: {
+                        Preferences.clipPreviewStyle = $0
+                        coordinator.objectWillChange.send()
+                    }
+                )) {
+                    ForEach(ClipPreviewStyle.allCases) { style in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(style.displayName)
+                            Text(style.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(style)
+                    }
+                }
+            }
             Section("Quick search popup") {
                 Picker("Open at", selection: Binding(
                     get: { Preferences.quickSearchPlacement },
@@ -202,7 +167,7 @@ struct AppSettingsView: View {
                         Text(p.displayName).tag(p)
                     }
                 }
-                Toggle("Show preview pane", isOn: Binding(
+                Toggle("Show Preview", isOn: Binding(
                     get: { Preferences.quickSearchPreviewEnabled },
                     set: { Preferences.quickSearchPreviewEnabled = $0; coordinator.objectWillChange.send() }
                 ))
@@ -221,6 +186,27 @@ struct AppSettingsView: View {
                     }
                 }
             }
+            Section("Popup filter bar") {
+                Text("Choose which filters appear in the Quick Search popup.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(QuickSearchPopupFilter.allCases) { filter in
+                    Toggle(isOn: quickSearchFilterBinding(filter)) {
+                        Label(filter.displayName, systemImage: filter.systemImage)
+                    }
+                }
+                Toggle("Show my categories", isOn: Binding(
+                    get: { QuickSearchFilterPreferences.showUserCategories },
+                    set: {
+                        QuickSearchFilterPreferences.showUserCategories = $0
+                        coordinator.objectWillChange.send()
+                    }
+                ))
+                Button("Reset filters to defaults") {
+                    QuickSearchFilterPreferences.resetToDefaults()
+                    coordinator.objectWillChange.send()
+                }
+            }
             Section("About") {
                 LabeledContent("Version",
                     value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0")
@@ -232,5 +218,21 @@ struct AppSettingsView: View {
     private func primaryDisplayID() -> CGDirectDisplayID {
         let id = (NSScreen.main?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
         return CGDirectDisplayID(id)
+    }
+
+    private func quickSearchFilterBinding(_ filter: QuickSearchPopupFilter) -> Binding<Bool> {
+        Binding(
+            get: { QuickSearchFilterPreferences.isEnabled(filter) },
+            set: { enabled in
+                var filters = QuickSearchFilterPreferences.enabledFilters
+                if enabled {
+                    filters.insert(filter)
+                } else {
+                    filters.remove(filter)
+                }
+                QuickSearchFilterPreferences.enabledFilters = filters
+                coordinator.objectWillChange.send()
+            }
+        )
     }
 }

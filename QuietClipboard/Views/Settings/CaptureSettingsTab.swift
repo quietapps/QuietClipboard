@@ -6,6 +6,10 @@ struct CaptureSettingsTab: View {
     @State private var sensitiveBehavior: SensitiveBehavior = Preferences.sensitiveBehavior
     @State private var capturedTypes: Set<ClipboardContentType> = Preferences.capturedTypes
     @State private var linkPreviewsEnabled: Bool = Preferences.linkPreviewsEnabled
+    @State private var autoCategorize: Bool = Preferences.autoCategorizationEnabled
+    @State private var autoCategorizeML: Bool = Preferences.autoCategorizationML
+    @State private var collapseDuplicates: Bool = Preferences.collapseDuplicates
+    @State private var captureUniversalClipboard: Bool = Preferences.captureUniversalClipboard
 
     var body: some View {
         Form {
@@ -44,6 +48,31 @@ struct CaptureSettingsTab: View {
                     Preferences.sensitiveBehavior = v
                 }
                 .disabled(!sensitiveEnabled)
+                if sensitiveEnabled, sensitiveBehavior == .saveHidden {
+                    Text("Saved clips stay blurred in the library, Quick Search, and menu bar until you tap Reveal.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Organization") {
+                Toggle("Suggest categories", isOn: $autoCategorize)
+                    .onChange(of: autoCategorize) { _, v in Preferences.autoCategorizationEnabled = v }
+                Toggle("Use on-device language analysis", isOn: $autoCategorizeML)
+                    .onChange(of: autoCategorizeML) { _, v in Preferences.autoCategorizationML = v }
+                    .disabled(!autoCategorize)
+                Toggle("Collapse near-duplicate clips", isOn: $collapseDuplicates)
+                    .onChange(of: collapseDuplicates) { _, v in Preferences.collapseDuplicates = v }
+            }
+
+            Section("Universal Clipboard") {
+                Toggle("Save copies from iPhone and iPad", isOn: $captureUniversalClipboard)
+                    .onChange(of: captureUniversalClipboard) { _, v in
+                        Preferences.captureUniversalClipboard = v
+                    }
+                Text("Detects Handoff via com.apple.is-remote-clipboard and tags clips as iPhone, iPad, or iPhone/iPad.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Links") {
