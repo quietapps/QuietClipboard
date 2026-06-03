@@ -26,7 +26,7 @@ struct HorizontalScrollBar<Content: View>: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = showsHorizontalScroller
-        scroll.autohidesScrollers = false
+        scroll.autohidesScrollers = true
         scroll.scrollerStyle = .overlay
         scroll.horizontalScrollElasticity = .automatic
         scroll.verticalScrollElasticity = .none

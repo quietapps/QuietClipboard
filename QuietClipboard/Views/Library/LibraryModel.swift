@@ -45,10 +45,13 @@ final class LibraryState: ObservableObject {
     @Published var selection: LibrarySelection = .history
     @Published var search: String = ""
     @Published var typeFilter: ClipboardContentType? = nil
+    @Published var appFilter: String? = nil
     @Published var groupBy: LibraryGroupBy = .contentType
     @Published var sort: LibrarySort = .dateDesc
     @Published var view: LibraryView = .grid
     @Published var selectedItemID: UUID? = nil
     @Published var expandedDuplicateGroups: Set<String> = []
     @Published var expandedCopyHistories: Set<UUID> = []
+    @Published var showTypeFilterBar: Bool = false
+    @Published var showAppFilterBar: Bool = false
 }

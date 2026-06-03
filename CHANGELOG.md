@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
+## [0.1.3] — 2026-06-03
+
+Version **0.1.3**
+
+### Build 1
+
+#### Added
+
+- **Type filter bar** — toolbar button reveals a row of content-type pills (Text, Image, Link, Code, Color, etc.) each with a live count; click any pill to filter the grid; active filter is highlighted; bar hides/shows without disrupting layout
+- **App filter bar** — second toolbar button reveals per-source-app pills with app icons and item counts; filter to any single app with one click
+- **Responsive filter bars** — all three filter/tab rows (type, app, category) use a wrapping flow layout; when items overflow the window width they wrap to a second row instead of clipping
+- **Floating detail panel** — item detail slides in from the right edge over the grid with a spring animation; a semi-transparent scrim dims the grid behind it; panel closes when clicking the scrim or switching tabs
+- **Detail panel metadata** — labeled fields for CREATED, SOURCE, LINK, COPIES, LAST COPIED, and SIZE; COPIES and LAST COPIED only appear for items copied more than once; links include an external-link button
+- **Detail panel category breadcrumb** — header shows the active tab or category name with a disclosure indicator
+- **Inline category creation** — the `+` button in the category tab bar expands an inline text field with a checkmark confirm; no separate sheet required
+- **Category rename via popover** — right-click any category pill → Rename opens an inline popover with a pre-filled text field
+- **Pause with duration presets** — the menu bar **Pause** menu now offers four preset durations: 10 minutes, 1 hour, 3 hours, or Until tomorrow (resumes at midnight); **Resume** button replaces the Pause menu while paused
+- **Auto-resume timer** — monitoring resumes automatically when the chosen pause duration expires
+- **Hover actions on grid cards** — hovering a library card reveals a delete button (top-left) and a favorite star (top-right) without opening the detail panel
+- **Double-click to copy** — double-clicking a grid card copies the item immediately without opening the detail panel
+- **Drag preview** — dragging a card out of the library shows a thumbnail drag preview
+- **Drop-target highlighting** — dragging a clip onto the Favorites or Pinned tab pill shows a green ring; dropping assigns the item
+
+#### Changed
+
+- **Library grid tiles** — new `LibraryCard` design with fixed 150 pt height; text clips use a light-grey background; image/media clips use a dark background with a gradient footer for the timestamp and type badge; hover and drag states animate with easing
+- **Adaptive grid columns** — grid uses `LazyVGrid` with `.adaptive(minimum: 160, maximum: 240)` columns so the layout responds to window width
+- **Filter and category bars no longer scroll horizontally** — replaced `ScrollView(.horizontal)` + `HStack` with a `FlowLayout` that wraps to additional rows as needed
+- **Category divider removed** — the fixed divider between built-in tabs and user categories is no longer needed now that the bar wraps naturally
+- **Detail panel replaces sidebar** — detail content is now in a floating overlay rather than a fixed sidebar column, giving the grid full width until an item is selected
+
+#### Fixed
+
+- **Horizontal scrollbar artifact** — a visible scrollbar track appeared below the category tab row on macOS 15; fixed by switching from `showsIndicators: false` to `.scrollIndicators(.hidden)`
+- **Category tab bar clipping** — long category lists were clipped at the window edge instead of wrapping
+
+---
+
 ## [0.1.1] — 2026-06-03
 
 Version **0.1.1**

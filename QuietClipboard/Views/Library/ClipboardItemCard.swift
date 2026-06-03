@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 enum ClipboardCardLayout {
     case flexible
@@ -157,6 +158,226 @@ struct ClipboardItemCard: View {
     }
 
 }
+
+// MARK: - LibraryCard (new grid tile for redesigned Library)
+
+struct LibraryCard: View {
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject private var coordinator: AppCoordinator
+
+    let item: ClipboardItem
+    let isSelected: Bool
+    var onTap: () -> Void
+    var onCopy: () -> Void
+    var onFavorite: () -> Void
+    var onDelete: () -> Void
+
+    @State private var isHovered: Bool = false
+    @State private var isDragging: Bool = false
+
+    private var isTextBased: Bool {
+        switch item.contentType {
+        case .text, .richText, .code, .other: return true
+        default: return false
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // Background: subtle grey for text tiles, black for media
+            (isTextBased ? Color(white: 0.13) : Color.black)
+
+            // Content fill — dim when being dragged
+            if isTextBased {
+                // Top padding (44) clears hover button area; bottom padding (34) clears footer
+                SensitiveContentGate(item: item, compact: true) {
+                    Text(item.textContent ?? item.title ?? "")
+                        .font(.system(
+                            item.contentType == .code ? .caption : .callout,
+                            design: item.contentType == .code ? .monospaced : .default
+                        ))
+                        .fontWeight(item.contentType == .code ? .regular : .semibold)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 44)
+                        .padding(.bottom, 34)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
+                .opacity(isDragging ? 0.4 : 1)
+            } else {
+                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(isDragging ? 0.4 : 1)
+            }
+
+            // Footer: gradient for media tiles, plain row for text tiles
+            if isTextBased {
+                HStack(spacing: 4) {
+                    ClipSourceIcon(item: item, size: 12)
+                    Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LinearGradient(
+                    gradient: Gradient(colors: [.clear, .black.opacity(0.6)]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 48)
+                .overlay(alignment: .bottomLeading) {
+                    HStack(spacing: 4) {
+                        ClipSourceIcon(item: item, size: 12)
+                        Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                        if let size = item.fileSize {
+                            Text("·").font(.caption2).foregroundStyle(.white.opacity(0.5))
+                            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+                }
+            }
+
+            // Hover action buttons
+            if isHovered {
+                VStack {
+                    HStack(alignment: .top) {
+                        // Type icon button (left)
+                        Button {
+                            // no-op; informational / future use for type filter
+                        } label: {
+                            Image(systemName: item.contentType.systemImage)
+                                .font(.callout)
+                                .padding(7)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.borderless)
+
+                        Spacer()
+
+                        // Delete button
+                        Button(role: .destructive) {
+                            onDelete()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.callout)
+                                .padding(7)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .foregroundStyle(.red.opacity(0.9))
+                        }
+                        .buttonStyle(.borderless)
+
+                        // Favorite button
+                        Button {
+                            onFavorite()
+                        } label: {
+                            Image(systemName: item.isFavorite ? "star.fill" : "star")
+                                .font(.callout)
+                                .padding(7)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .foregroundStyle(item.isFavorite ? Color.yellow : .white)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(8)
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
+        }
+        .frame(height: 150)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(
+                    isSelected ? Color.accentColor : (isHovered && !isDragging ? Color.white.opacity(0.3) : Color.clear),
+                    lineWidth: isSelected ? 2 : 1
+                )
+        )
+        .overlay(
+            isDragging ?
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .foregroundStyle(Color.white.opacity(0.6))
+            : nil
+        )
+        .contentShape(Rectangle())
+        .onHover { hovered in
+            isHovered = hovered
+            if !hovered { isDragging = false }
+        }
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .animation(.easeInOut(duration: 0.1), value: isDragging)
+        .highPriorityGesture(TapGesture().onEnded { onTap() })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { onCopy() })
+        .onDrag {
+            DispatchQueue.main.async { isDragging = true }
+            let provider = NSItemProvider()
+            let idString = item.id.uuidString
+            // Register custom UTI for internal drops
+            if let data = idString.data(using: .utf8) {
+                provider.registerDataRepresentation(
+                    forTypeIdentifier: "app.quiet.QuietClipboard.item-id",
+                    visibility: .all
+                ) { completion in
+                    completion(data, nil)
+                    return nil
+                }
+            }
+            // Register content-specific public type
+            switch item.contentType {
+            case .image, .screenshot:
+                if let imgData = item.thumbnailData ?? (item.content as Data?),
+                   let nsImage = NSImage(data: imgData) {
+                    provider.registerObject(nsImage, visibility: .all)
+                }
+            case .text, .code, .richText:
+                if let text = item.textContent ?? item.title {
+                    provider.registerObject(text as NSString, visibility: .all)
+                }
+            case .link:
+                if let urlString = item.textContent, let url = URL(string: urlString) {
+                    provider.registerObject(url as NSURL, visibility: .all)
+                }
+            default:
+                if let text = item.textContent ?? item.title {
+                    provider.registerObject(text as NSString, visibility: .all)
+                }
+            }
+            return provider
+        } preview: {
+            ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: false)
+                .frame(width: 80, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .opacity(0.55)
+                .allowsHitTesting(false)
+        }
+        .contextMenu { ItemContextMenu(item: item) }
+        .pointerCursor()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.contentType.displayName) clip from \(item.sourceAppName ?? "unknown app")")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: -
 
 struct ClipboardItemRow: View {
     @EnvironmentObject private var coordinator: AppCoordinator

@@ -24,10 +24,6 @@ struct QuietClipboardApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPopover()
-                .background {
-                    WindowHandlerInstaller(coordinator: coordinator)
-                    OpenSettingsCapture(coordinator: coordinator)
-                }
                 .environmentObject(coordinator)
                 .environmentObject(coordinator.monitor)
                 .modelContainer(coordinator.container)
@@ -36,7 +32,7 @@ struct QuietClipboardApp: App {
                   ? "doc.on.clipboard"
                   : "doc.on.clipboard.fill")
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         .commands { CommandGroup(replacing: .newItem) {} }
 

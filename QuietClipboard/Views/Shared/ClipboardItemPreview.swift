@@ -4,13 +4,19 @@ struct ClipboardItemPreview: View {
     let item: ClipboardItem
     /// Use compact redaction (lock only) for small preview areas such as popup grid cells.
     var compactRedaction: Bool = false
+    /// Use larger icons for spacious card previews (library grid tiles, detail panel).
+    var largeIcons: Bool = false
+    /// When false, images use .fit (show full image, maintain aspect ratio). Default true = .fill (crop to frame).
+    var fillImages: Bool = true
+    /// Background color for letterbox areas. Defaults to system control background.
+    var backgroundColor: Color = Color(nsColor: .controlBackgroundColor)
 
     var body: some View {
         SensitiveContentGate(item: item, compact: compactRedaction) {
             previewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -25,42 +31,55 @@ struct ClipboardItemPreview: View {
             case .image, .screenshot:
                 if let data = item.thumbnailData ?? item.content as Data?,
                    let nsImage = NSImage(data: data) {
-                    GeometryReader { geo in
+                    if fillImages {
+                        GeometryReader { geo in
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        }
+                    } else {
                         Image(nsImage: nsImage)
                             .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .clipped()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity)
                     }
                 } else {
                     placeholder
                 }
             case .color:
-                if let hex = item.colorHex, let color = Color(hex: hex) {
-                    color
+                if let hex = item.colorHex ?? item.textContent, let color = Color(hex: hex) {
+                    ZStack(alignment: .bottomLeading) {
+                        color
+                        Text(hex)
+                            .font(.system(largeIcons ? .body : .caption2, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                            .padding(largeIcons ? 12 : 6)
+                    }
                 } else {
                     placeholder
                 }
             case .file:
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     Image(systemName: "doc")
-                        .font(.system(size: 28))
+                        .font(.system(size: largeIcons ? 56 : 28))
                     Text(item.title ?? "File")
-                        .font(.caption)
+                        .font(largeIcons ? .caption : .caption2)
                         .lineLimit(1)
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .link:
-                LinkFaviconView(item: item, iconSize: 36)
+                LinkFaviconView(item: item, iconSize: largeIcons ? 72 : 36)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             default:
                 Text(item.textContent ?? item.title ?? "")
-                    .font(.system(.caption, design: item.contentType == .code ? .monospaced : .default))
-                    .lineLimit(4)
-                    .truncationMode(.tail)
+                    .font(.system(largeIcons ? .callout : .caption, design: item.contentType == .code ? .monospaced : .default))
+                    .lineLimit(largeIcons ? nil : 4)
                     .multilineTextAlignment(.leading)
-                    .padding(6)
+                    .padding(8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
@@ -68,7 +87,7 @@ struct ClipboardItemPreview: View {
 
     private var placeholder: some View {
         Image(systemName: item.contentType.systemImage)
-            .font(.system(size: 24))
+            .font(.system(size: largeIcons ? 48 : 24))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

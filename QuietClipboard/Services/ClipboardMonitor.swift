@@ -6,11 +6,18 @@ import CryptoKit
 @MainActor
 final class ClipboardMonitor: ObservableObject {
     @Published var isPaused: Bool = false
+    @Published var pauseUntil: Date? = nil
 
-    private let modelContainer: ModelContainer
-    private var task: Task<Void, Never>?
+    let modelContainer: ModelContainer  // `let` allows nonisolated access (Sendable)
+    private var monitorTask: Task<Void, Never>?
+    private var pauseTimer: Timer?
     private var lastChangeCount: Int
-    private var lastContentHash: String?
+    // Written only from MainActor; read on bg by passing snapshot value
+    private(set) var lastContentHash: String?
+
+    // Max raw content stored — larger content stored as thumbnail only
+    private static let maxRawBytes = 8 * 1024 * 1024  // 8 MB
+    private static let maxTextBytes = 512 * 1024       // 512 KB
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -18,8 +25,8 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     func start() {
-        guard task == nil else { return }
-        task = Task { [weak self] in
+        guard monitorTask == nil else { return }
+        monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
                 try? await Task.sleep(nanoseconds: 500_000_000)
@@ -28,77 +35,134 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     func stop() {
-        task?.cancel()
-        task = nil
+        monitorTask?.cancel()
+        monitorTask = nil
     }
 
     func setPaused(_ paused: Bool) {
         isPaused = paused
+        if !paused {
+            pauseTimer?.invalidate()
+            pauseTimer = nil
+            pauseUntil = nil
+        }
     }
 
-    /// Call after the app copies an item to the pasteboard so the monitor does not double-count.
+    func pause(for seconds: TimeInterval) {
+        let target = Date().addingTimeInterval(seconds)
+        isPaused = true
+        pauseUntil = target
+        pauseTimer?.invalidate()
+        pauseTimer = Timer.scheduledTimer(withTimeInterval: max(1, seconds), repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { self?.setPaused(false) }
+        }
+    }
+
+    func pauseUntilTomorrow() {
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        comps.day! += 1
+        comps.hour = 0; comps.minute = 0; comps.second = 0
+        if let tomorrow = Calendar.current.date(from: comps) {
+            pause(for: max(1, tomorrow.timeIntervalSinceNow))
+        }
+    }
+
     func acknowledgeUserCopy(contentHash: String) {
         lastContentHash = contentHash
         lastChangeCount = NSPasteboard.general.changeCount
     }
 
+    // Snapshot of @MainActor Preferences values — captured before leaving main thread
+    struct CaptureSettings: Sendable {
+        let isTypeCaptured: (ClipboardContentType) -> Bool
+        let sensitiveDetectionEnabled: Bool
+        let sensitiveBehavior: SensitiveBehavior
+        let autoCategorizationEnabled: Bool
+        let autoCategorizationML: Bool
+        let captureUniversalClipboard: Bool
+        let excludedBundleIDs: Set<String>
+
+        @MainActor
+        init() {
+            self.sensitiveDetectionEnabled  = Preferences.sensitiveDetectionEnabled
+            self.sensitiveBehavior          = Preferences.sensitiveBehavior
+            self.autoCategorizationEnabled  = Preferences.autoCategorizationEnabled
+            self.autoCategorizationML       = Preferences.autoCategorizationML
+            self.captureUniversalClipboard  = Preferences.captureUniversalClipboard
+            self.excludedBundleIDs          = Preferences.excludedBundleIDs
+            let captured                    = Preferences.capturedTypes
+            self.isTypeCaptured             = { captured.contains($0) }
+        }
+    }
+
+    // MARK: - Tick (main thread — NSPasteboard requires it)
+
     private func tick() async {
         let pb = NSPasteboard.general
         let current = pb.changeCount
-        if isPaused {
-            lastChangeCount = current
-            return
-        }
+        if isPaused { lastChangeCount = current; return }
         if current == lastChangeCount { return }
         lastChangeCount = current
 
         let snap = PasteboardHelper.snapshot(pb)
-        if snap.isConcealed { return }
-        if snap.isTransient { return }
-        if snap.isUniversalClipboard, !Preferences.captureUniversalClipboard { return }
+        guard !snap.isConcealed, !snap.isTransient else { return }
+
+        let settings = CaptureSettings()
+        guard !snap.isUniversalClipboard || settings.captureUniversalClipboard else { return }
 
         let frontApp = NSWorkspace.shared.frontmostApplication
         var bundleID = frontApp?.bundleIdentifier
-        var appName = frontApp?.localizedName
+        var appName  = frontApp?.localizedName
 
         if snap.isUniversalClipboard {
             bundleID = UniversalClipboardBridge.syntheticBundleID
-            appName = snap.universalClipboardDeviceName ?? "iPhone/iPad"
-        } else if let bid = bundleID, Preferences.excludedBundleIDs.contains(bid) {
+            appName  = snap.universalClipboardDeviceName ?? "iPhone/iPad"
+        } else if let bid = bundleID, settings.excludedBundleIDs.contains(bid) {
             return
         }
 
-        await ingest(snap: snap, bundleID: bundleID, appName: appName)
+        let priorHash = lastContentHash
+
+        Task.detached(priority: .utility) { [weak self] in
+            await self?.backgroundIngest(
+                snap: snap, bundleID: bundleID, appName: appName,
+                priorHash: priorHash, settings: settings
+            )
+        }
     }
 
-    private func ingest(snap: PasteboardSnapshot, bundleID: String?, appName: String?) async {
+    // MARK: - Background ingest (nonisolated — runs off main thread)
+
+    nonisolated private func backgroundIngest(
+        snap: PasteboardSnapshot,
+        bundleID: String?,
+        appName: String?,
+        priorHash: String?,
+        settings: CaptureSettings
+    ) async {
         let type = ContentTypeDetector.detect(snap)
-
-        if !Preferences.isTypeCaptured(type) { return }
-
-        guard let payload = makePayload(snap: snap, type: type) else { return }
+        guard settings.isTypeCaptured(type) else { return }
+        guard let payload = Self.buildPayload(snap: snap, type: type) else { return }
 
         let hash = Self.hash(payload.content)
-        if hash == lastContentHash { return }
+        guard hash != priorHash else { return }
 
-        let title = ContentTypeDetector.title(for: snap, type: type)
-        let colorHex = type == .color ? ColorParsing.hexFrom(snap.string ?? "") : nil
+        let title       = ContentTypeDetector.title(for: snap, type: type)
+        let colorHex    = type == .color ? ColorParsing.hexFrom(snap.string ?? "") : nil
         let fingerprint = DuplicateDetectionService.normalizedFingerprint(
-            text: payload.text,
-            contentType: type,
-            contentHash: hash
+            text: payload.text, contentType: type, contentHash: hash
         )
 
-        var detectedSensitive = false
-        if Preferences.sensitiveDetectionEnabled {
+        var isSensitive = false
+        if settings.sensitiveDetectionEnabled {
             if let text = payload.text {
-                detectedSensitive = SensitiveDetector.isSensitive(text, isConcealed: snap.isConcealed)
+                isSensitive = SensitiveDetector.isSensitive(text, isConcealed: snap.isConcealed)
             } else if snap.isConcealed {
-                detectedSensitive = true
+                isSensitive = true
             }
-            if detectedSensitive, Preferences.sensitiveBehavior == .skip { return }
+            if isSensitive, settings.sensitiveBehavior == .skip { return }
         }
-        let isSensitive = detectedSensitive && Preferences.sensitiveBehavior == .saveHidden
+        let saveHidden = isSensitive && settings.sensitiveBehavior == .saveHidden
 
         let context = ModelContext(modelContainer)
         var existingDesc = FetchDescriptor<ClipboardItem>(
@@ -111,28 +175,22 @@ final class ClipboardMonitor: ObservableObject {
         let now = Date.now
 
         if let existing = (try? context.fetch(existingDesc))?.first {
-            existing.copyCount += 1
+            existing.copyCount   += 1
             existing.lastCopiedAt = now
-            existing.modifiedAt = now
+            existing.modifiedAt   = now
             if snap.isUniversalClipboard {
                 existing.sourceAppBundleID = bundleID
-                existing.sourceAppName = appName
+                existing.sourceAppName     = appName
             } else {
                 if existing.sourceAppBundleID == nil { existing.sourceAppBundleID = bundleID }
-                if existing.sourceAppName == nil { existing.sourceAppName = appName }
+                if existing.sourceAppName     == nil { existing.sourceAppName     = appName  }
             }
-
-            let event = ClipboardCopyEvent(
-                copiedAt: now,
-                sourceAppBundleID: bundleID,
-                sourceAppName: appName
-            )
+            let event = ClipboardCopyEvent(copiedAt: now, sourceAppBundleID: bundleID, sourceAppName: appName)
             event.item = existing
             existing.copyEvents.append(event)
             context.insert(event)
-
             do { try context.save(); resultID = existing.id; wasInsert = false }
-            catch { NSLog("Duplicate save failed: \(error)"); resultID = nil; wasInsert = false }
+            catch { NSLog("Dup save failed: \(error)"); resultID = nil; wasInsert = false }
         } else {
             let item = ClipboardItem(
                 content: payload.content,
@@ -146,78 +204,79 @@ final class ClipboardMonitor: ObservableObject {
                 colorHex: colorHex,
                 fileSize: payload.fileSize,
                 fileMIMEType: payload.mime,
-                isSensitive: isSensitive
+                isSensitive: saveHidden
             )
             item.normalizedFingerprint = fingerprint
             item.applyStructuredDataDetection()
 
-            let event = ClipboardCopyEvent(
-                copiedAt: now,
-                sourceAppBundleID: bundleID,
-                sourceAppName: appName
-            )
+            let event = ClipboardCopyEvent(copiedAt: now, sourceAppBundleID: bundleID, sourceAppName: appName)
             event.item = item
             item.copyEvents.append(event)
             context.insert(event)
-
-            if Preferences.autoCategorizationEnabled {
-                let suggestions = CategorySuggestionService.suggest(for: item)
-                if !suggestions.isEmpty {
-                    item.setPendingSuggestions(suggestions)
-                }
-            }
-
             DuplicateDetectionService.assignNearDuplicateGroup(item: item, context: context)
             context.insert(item)
-
             do { try context.save(); resultID = item.id; wasInsert = true }
             catch { NSLog("Insert save failed: \(error)"); resultID = nil; wasInsert = false }
         }
 
-        lastContentHash = hash
-
-        if wasInsert {
-            if isSensitive {
-                CaptureFeedbackSound.playSensitiveCapture()
-            } else {
-                CaptureFeedbackSound.playNewCapture()
+        await MainActor.run { [weak self] in
+            self?.lastContentHash = hash
+            if wasInsert {
+                if saveHidden { CaptureFeedbackSound.playSensitiveCapture() }
+                else          { CaptureFeedbackSound.playNewCapture() }
             }
         }
 
         if wasInsert, let id = resultID {
-            Task.detached { [weak self] in
-                await self?.enrich(itemID: id, type: type, snap: snap, payload: payload)
+            Task.detached(priority: .background) { [weak self] in
+                await self?.enrich(itemID: id, type: type, snap: snap, payload: payload,
+                                   settings: settings)
             }
         }
     }
 
-    private func enrich(itemID: UUID, type: ClipboardContentType,
-                        snap: PasteboardSnapshot, payload: Payload) async {
+    // MARK: - Enrichment
+
+    nonisolated private func enrich(
+        itemID: UUID, type: ClipboardContentType,
+        snap: PasteboardSnapshot, payload: Payload,
+        settings: CaptureSettings
+    ) async {
         switch type {
         case .image, .screenshot:
             if let ocr = await OCRService.recognizeText(in: payload.content) {
+                // Pre-compute categorization suggestions on main if needed
+                let suggestions: [CategorySuggestion]
+                if settings.autoCategorizationEnabled {
+                    suggestions = await MainActor.run {
+                        let ctx = ModelContext(modelContainer)
+                        var d = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == itemID })
+                        d.fetchLimit = 1
+                        guard let item = (try? ctx.fetch(d))?.first else { return [] }
+                        return CategorySuggestionService.suggest(for: item, useML: settings.autoCategorizationML)
+                    }
+                } else { suggestions = [] }
+
                 await applyUpdate(itemID: itemID) { item in
                     item.ocrText = ocr
-                    if Preferences.autoCategorizationEnabled, item.pendingSuggestions.isEmpty {
-                        item.setPendingSuggestions(CategorySuggestionService.suggest(for: item))
+                    if !suggestions.isEmpty, item.pendingSuggestions.isEmpty {
+                        item.setPendingSuggestions(suggestions)
                     }
                 }
             }
         case .link:
             guard let s = snap.string,
                   let url = URL(string: s.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  let scheme = url.scheme,
-                  scheme.lowercased().hasPrefix("http") else { return }
+                  url.scheme?.lowercased().hasPrefix("http") == true else { return }
             if let result = await LinkPreviewService.fetch(url) {
                 await applyUpdate(itemID: itemID) {
-                    $0.linkPreviewTitle = result.title
+                    $0.linkPreviewTitle       = result.title
                     $0.linkPreviewDescription = result.description
-                    $0.linkPreviewImageData = result.imageData
+                    $0.linkPreviewImageData   = result.imageData
                     if let t = result.title, !t.isEmpty { $0.title = t }
                 }
             }
-            let iconData = await LinkPreviewService.fetchFavicon(for: url)
-            if let iconData {
+            if let iconData = await LinkPreviewService.fetchFavicon(for: url) {
                 await applyUpdate(itemID: itemID) {
                     $0.thumbnailData = LinkPreviewService.faviconThumbnailData(from: iconData) ?? iconData
                 }
@@ -227,21 +286,19 @@ final class ClipboardMonitor: ObservableObject {
         }
     }
 
-    private func applyUpdate(itemID: UUID, mutate: (ClipboardItem) -> Void) async {
-        await MainActor.run {
-            let context = ModelContext(modelContainer)
-            var desc = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate { $0.id == itemID }
-            )
-            desc.fetchLimit = 1
-            guard let item = (try? context.fetch(desc))?.first else { return }
-            mutate(item)
-            item.modifiedAt = .now
-            try? context.save()
-        }
+    nonisolated private func applyUpdate(itemID: UUID, mutate: @Sendable (ClipboardItem) -> Void) async {
+        let context = ModelContext(modelContainer)
+        var desc = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == itemID })
+        desc.fetchLimit = 1
+        guard let item = (try? context.fetch(desc))?.first else { return }
+        mutate(item)
+        item.modifiedAt = .now
+        try? context.save()
     }
 
-    private struct Payload {
+    // MARK: - Payload building (nonisolated — runs on background thread)
+
+    struct Payload {
         var content: Data
         var text: String?
         var thumbnail: Data?
@@ -249,40 +306,50 @@ final class ClipboardMonitor: ObservableObject {
         var mime: String?
     }
 
-    private func makePayload(snap: PasteboardSnapshot, type: ClipboardContentType) -> Payload? {
+    nonisolated private static func buildPayload(snap: PasteboardSnapshot, type: ClipboardContentType) -> Payload? {
         switch type {
         case .image, .screenshot:
-            let data = snap.png ?? snap.tiff
-            guard let d = data else { return nil }
-            let thumb = ThumbnailGenerator.thumbnail(forImageData: d)
-            return Payload(content: d, text: nil, thumbnail: thumb,
-                           fileSize: Int64(d.count), mime: "image/png")
+            guard let raw = snap.png ?? snap.tiff else { return nil }
+            let thumb = ThumbnailGenerator.thumbnail(forImageData: raw)  // CGContext — thread-safe
+            // Store raw only if under limit; otherwise thumbnail serves as content
+            let stored = raw.count > maxRawBytes ? (thumb ?? raw) : raw
+            return Payload(content: stored, text: nil, thumbnail: thumb,
+                           fileSize: Int64(raw.count), mime: "image/png")
+
         case .file:
             guard let url = snap.fileURLs.first else { return nil }
-            let path = url.path
-            let data = Data(path.utf8)
-            let attrs = try? FileManager.default.attributesOfItem(atPath: path)
-            let size = (attrs?[.size] as? NSNumber)?.int64Value
+            let data  = Data(url.path.utf8)
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size  = (attrs?[.size] as? NSNumber)?.int64Value
             return Payload(content: data, text: url.absoluteString,
                            thumbnail: nil, fileSize: size, mime: nil)
+
         case .richText:
             if let rtf = snap.rtf {
-                return Payload(content: rtf, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/rtf")
+                let capped = rtf.count > maxRawBytes ? rtf.prefix(maxRawBytes) : rtf[...]
+                return Payload(content: Data(capped), text: snap.string,
+                               thumbnail: nil, fileSize: nil, mime: "text/rtf")
             }
             if let html = snap.html, let htmlData = html.data(using: .utf8) {
-                return Payload(content: htmlData, text: snap.string, thumbnail: nil, fileSize: nil, mime: "text/html")
+                let capped = htmlData.count > maxRawBytes ? htmlData.prefix(maxRawBytes) : htmlData[...]
+                return Payload(content: Data(capped), text: snap.string,
+                               thumbnail: nil, fileSize: nil, mime: "text/html")
             }
             if let s = snap.string {
                 return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: nil)
             }
             return nil
+
         case .text, .markdown, .code, .link, .color, .svg, .other:
             guard let s = snap.string else { return nil }
-            return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: "text/plain")
+            // Cap very large text to avoid blocking
+            let text = s.count > 500_000 ? String(s.prefix(500_000)) : s
+            return Payload(content: Data(text.utf8), text: text,
+                           thumbnail: nil, fileSize: nil, mime: "text/plain")
         }
     }
 
-    private static func hash(_ d: Data) -> String {
+    nonisolated private static func hash(_ d: Data) -> String {
         let digest = SHA256.hash(data: d)
         return digest.map { String(format: "%02x", $0) }.joined()
     }

@@ -31,6 +31,19 @@
 	</dict>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.quiet.QuietClipboard.item-id</string>
+			<key>UTTypeDescription</key>
+			<string>Quiet Clipboard Item Identifier</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>Add contacts from detected emails and phone numbers on your clipboard.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>

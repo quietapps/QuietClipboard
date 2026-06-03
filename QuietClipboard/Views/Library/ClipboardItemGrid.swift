@@ -47,22 +47,23 @@ struct ClipboardItemGrid: View {
     }
 
     private func itemButton(_ item: ClipboardItem) -> some View {
-        ClipboardItemCard(
+        LibraryCard(
             item: item,
             isSelected: item.id == selectedID,
-            layout: .gridTile,
-            isCopyHistoryExpanded: false,
-            onToggleCopyHistory: nil
+            onTap: {
+                if selectedID == item.id { onActivate(item) } else { selectedID = item.id }
+            },
+            onCopy: { onActivate(item) },
+            onFavorite: {
+                item.isFavorite.toggle()
+                item.modifiedAt = .now
+            },
+            onDelete: {
+                if selectedID == item.id { selectedID = nil }
+            }
         )
         .frame(maxWidth: .infinity)
-        .frame(height: LibraryGridMetrics.tileHeight)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if selectedID == item.id { onActivate(item) } else { selectedID = item.id }
-        }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate(item) })
-        .contextMenu { ItemContextMenu(item: item) }
-        .pointerCursor()
     }
 
     @ViewBuilder

@@ -4,127 +4,118 @@ import AppKit
 
 struct MenuBarPopover: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var monitor: ClipboardMonitor
-    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
-    @State private var search: String = ""
-    @State private var popupViewMode: PopupViewMode = .list
+    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var allItems: [ClipboardItem]
 
-    var filtered: [ClipboardItem] {
-        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = items.sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
-        let limited = Array(base.prefix(150))
-        guard !trimmed.isEmpty else { return Array(limited.prefix(15)) }
-        return ClipSearchMatcher.ranked(limited, query: trimmed)
-            .prefix(15)
-            .map { $0 }
+    private var recentItems: [ClipboardItem] {
+        Array(allItems.sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }.prefix(10))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            if filtered.isEmpty {
-                emptyState
+        Button("Open Library") {
+            coordinator.openLibraryWindow()
+        }
+
+        Divider()
+
+        Menu("History") {
+            if recentItems.isEmpty {
+                Text("No clips yet")
             } else {
-                PopupItemsView(
-                    items: filtered,
-                    viewMode: popupViewMode,
-                    onActivate: { copy($0) },
-                    onTogglePin: { togglePin($0) },
-                    onDelete: { deleteItem($0) },
-                    onToggleFavorite: { toggleFavorite($0) }
-                )
+                ForEach(Array(recentItems.enumerated()), id: \.element.id) { index, item in
+                    Button {
+                        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+                    } label: {
+                        Label {
+                            Text(historyLabel(item))
+                        } icon: {
+                            if let img = appIcon(for: item.sourceAppBundleID) {
+                                Image(nsImage: img)
+                            } else {
+                                Image(systemName: item.contentType.systemImage)
+                            }
+                        }
+                    }
+                    .keyboardShortcut(keyEquiv(index), modifiers: [.control, .command])
+                }
             }
-            Divider()
-            footer
         }
-        .frame(width: 380, height: 480)
-        .onAppear { popupViewMode = Preferences.popupViewMode }
-        .onChange(of: popupViewMode) { _, new in Preferences.popupViewMode = new }
-    }
 
-    private var header: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search clips", text: $search)
-                .textFieldStyle(.plain)
+        Divider()
+
+        Button("Settings") {
+            openSettings()
         }
-        .padding(10)
-    }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(items.isEmpty ? "No clips yet" : "No matches")
-                .foregroundStyle(.secondary)
+        if monitor.isPaused {
+            Button("Resume") {
+                monitor.setPaused(false)
+            }
+        } else {
+            Menu("Pause") {
+                Button("For 10 minutes")  { monitor.pause(for: 600) }
+                Button("For 1 hour")      { monitor.pause(for: 3_600) }
+                Button("For 3 hours")     { monitor.pause(for: 10_800) }
+                Button("Until tomorrow")  { monitor.pauseUntilTomorrow() }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 
-    private var footer: some View {
-        HStack {
-            PopupViewModePicker(mode: $popupViewMode)
+        Divider()
 
-            Button {
-                monitor.setPaused(!monitor.isPaused)
-            } label: {
-                Label(monitor.isPaused ? "Resume" : "Pause",
-                      systemImage: monitor.isPaused ? "play.fill" : "pause.fill")
-            }
-            .buttonStyle(.borderless)
-            .pointerCursor()
-
-            Button {
-                coordinator.openLibraryWindow()
-            } label: {
-                Label("Library", systemImage: "tray.full")
-            }
-            .buttonStyle(.borderless)
-            .pointerCursor()
-
-            Spacer()
-
-            AppSettingsLink {
-                Image(systemName: "gearshape")
-            }
-            .buttonStyle(.borderless)
-            .pointerCursor()
-            .help("Settings")
-
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                Image(systemName: "power")
-            }
-            .buttonStyle(.borderless)
-            .pointerCursor()
+        Menu("Clear History") {
+            Button("Clear All") { clearHistory(keepFavorites: false) }
+            Button("Clear except Favorites") { clearHistory(keepFavorites: true) }
         }
-        .padding(8)
+
+        Divider()
+
+        Button("Quit") {
+            NSApp.terminate(nil)
+        }
     }
 
-    private func copy(_ item: ClipboardItem) {
-        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
-        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+    // MARK: – Helpers
+
+    private func historyLabel(_ item: ClipboardItem) -> String {
+        if let size = item.fileSize {
+            return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        }
+        let raw = item.title ?? item.textContent ?? item.contentType.displayName
+        return String(raw.prefix(60))
     }
 
-    private func deleteItem(_ item: ClipboardItem) {
-        coordinator.pinned.unpin(itemID: item.id)
-        context.delete(item)
+    private func appIcon(for bundleID: String?) -> NSImage? {
+        guard let bundleID,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    private func keyEquiv(_ index: Int) -> KeyEquivalent {
+        let chars: [Character] = ["0","1","2","3","4","5","6","7","8","9"]
+        guard index < chars.count else { return "\0" }
+        return KeyEquivalent(chars[index])
+    }
+
+    private func clearHistory(keepFavorites: Bool) {
+        let alert = NSAlert()
+        alert.messageText = "Clear Clipboard History"
+        alert.informativeText = keepFavorites
+            ? "Delete all clips except favorites. This cannot be undone."
+            : "Delete all clips including favorites. This cannot be undone."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let descriptor = FetchDescriptor<ClipboardItem>()
+        guard let items = try? context.fetch(descriptor) else { return }
+        for item in items {
+            if keepFavorites && item.isFavorite { continue }
+            coordinator.pinned.unpin(itemID: item.id)
+            context.delete(item)
+        }
         try? context.save()
     }
-
-    private func toggleFavorite(_ item: ClipboardItem) {
-        item.isFavorite.toggle()
-        item.modifiedAt = .now
-        try? context.save()
-    }
-
-    private func togglePin(_ item: ClipboardItem) {
-        coordinator.pinned.togglePin(itemID: item.id)
-    }
-
 }

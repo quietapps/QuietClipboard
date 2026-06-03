@@ -74,6 +74,8 @@
 		9FEA93509D8929E4726C0E96 /* ClipPreviewStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED7868F6E5ADE54214FB0CF2 /* ClipPreviewStyle.swift */; };
 		A333FFA9C3E4820CB393AA98 /* ExcludedAppsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273BA0B7000BEC273D1616EB /* ExcludedAppsSettingsView.swift */; };
 		A8E7853DFEF8920D6EF0C493 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9788C817E364B2D7250A6711 /* ItemDetailView.swift */; };
+		AA11BB22CC33DD44EE55FF61 /* LibraryDetailPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF60 /* LibraryDetailPanel.swift */; };
+		AA22BB33CC44DD55EE66FF71 /* LibraryFilterBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA22BB33CC44DD55EE66FF70 /* LibraryFilterBars.swift */; };
 		AE489B762ED8185451A8DA5F /* ContentTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 740FFAA8959957102A0DA259 /* ContentTypeDetector.swift */; };
 		B54AB61AC053F7F1A64D5E1B /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790D86F41F534C78B986D50C /* Preferences.swift */; };
 		B5B92ECE385057EB15CEA26D /* DuplicateDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369FC3658CEAF65753DD7DB0 /* DuplicateDetectionService.swift */; };
@@ -184,6 +186,8 @@
 		A3E160CD3899D8942647AF5D /* ColorParsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorParsing.swift; sourceTree = "<group>"; };
 		A4AFBBC9D9FE275C2EC3CE90 /* ClipSourceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipSourceIcon.swift; sourceTree = "<group>"; };
 		A505972059DED9A98923D388 /* ClipboardItem+UniversalClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ClipboardItem+UniversalClipboard.swift"; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF60 /* LibraryDetailPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDetailPanel.swift; sourceTree = "<group>"; };
+		AA22BB33CC44DD55EE66FF70 /* LibraryFilterBars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterBars.swift; sourceTree = "<group>"; };
 		AB003F642CB12EACCF80919E /* UsageStatsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageStatsDashboardView.swift; sourceTree = "<group>"; };
 		B20F340AC6D0AEBB0A4CBE9F /* UniversalClipboardBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniversalClipboardBridge.swift; sourceTree = "<group>"; };
 		B54A37ED33ED9F7D71107A01 /* CaptureFeedbackSound.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureFeedbackSound.swift; sourceTree = "<group>"; };
@@ -234,8 +238,10 @@
 				0862B0B552849E379A0F5A60 /* LibraryDisplayGrouping.swift */,
 				121ED49B4898BB379835FD5E /* LibraryGridMetrics.swift */,
 				1DEAAB41F922A53A63AF7324 /* LibraryModel.swift */,
+				AA22BB33CC44DD55EE66FF70 /* LibraryFilterBars.swift */,
 				19522B0CEDC4507E2E219654 /* LibrarySidebar.swift */,
 				0AAB64E93E4431520E35B02A /* LibraryWindow.swift */,
+				AA11BB22CC33DD44EE55FF60 /* LibraryDetailPanel.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -513,6 +519,7 @@
 				7583A926ADC32E3242F66711 /* ClipboardItem+StructuredData.swift in Sources */,
 				E89BFB75650BF64161ED05A2 /* ClipboardItem+UniversalClipboard.swift in Sources */,
 				9675DFA37DFB432BFA43B4AF /* ClipboardItem.swift in Sources */,
+				AA22BB33CC44DD55EE66FF71 /* LibraryFilterBars.swift in Sources */,
 				C91F67174296A7B29D701EE3 /* ClipboardItemCard.swift in Sources */,
 				BA54525F9DB6B0539A213793 /* ClipboardItemDelivery.swift in Sources */,
 				04889BA74535667C4C1D0F4E /* ClipboardItemGrid.swift in Sources */,
@@ -540,6 +547,7 @@
 				2E15459AC98BB9A781387E3D /* LibraryModel.swift in Sources */,
 				4CA9279B25A34BCF9EB8DA3C /* LibrarySidebar.swift in Sources */,
 				6210D615CD00BAB97F86E394 /* LibraryWindow.swift in Sources */,
+				AA11BB22CC33DD44EE55FF61 /* LibraryDetailPanel.swift in Sources */,
 				2676D7021EECCC9C177113F3 /* LibraryWindowPresenter.swift in Sources */,
 				7ED42011B0BD1299734D13EB /* LinkFaviconResolver.swift in Sources */,
 				18C9E37FF21ADB70BA6CECF5 /* LinkFaviconView.swift in Sources */,
@@ -747,7 +755,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.quiet.QuietClipboard;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -766,7 +774,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.quiet.QuietClipboard;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
