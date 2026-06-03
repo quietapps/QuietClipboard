@@ -68,6 +68,7 @@ final class AppCoordinator: ObservableObject {
         didBootstrap = true
         DataMigrationService.migrateIfNeeded(container: container)
         pinned.pruneMissingItems(context: ModelContext(container))
+        ExcludedAppsCatalog.seedDefaultsIfNeeded()
         monitor.start()
         retention.start()
         ShortcutManager.shared.onAction = { [weak self] action in
@@ -128,8 +129,19 @@ final class AppCoordinator: ObservableObject {
         let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
         quickSearch?.hide()
         let context = ModelContext(container)
-        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
-        PasteSimulator.pasteAndRestore(item: item, priorApp: prior)
+        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor)
+    }
+
+    func typeFromQuickSearch(_ item: ClipboardItem) {
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
+        guard let text = PasteSimulator.plainText(from: item) else {
+            pasteFromQuickSearch(item)
+            return
+        }
+        let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
+        quickSearch?.hide()
+        let context = ModelContext(container)
+        ClipboardItemDelivery.deliverWithAutoType(text, item: item, priorApp: prior, context: context, monitor: monitor)
     }
 
     func openLibraryWindow() {
@@ -152,8 +164,15 @@ final class AppCoordinator: ObservableObject {
 
     private func pasteItem(_ item: ClipboardItem, context: ModelContext) {
         guard shouldProceedWithSensitiveAction(for: item) else { return }
-        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
         let prior = PasteSimulator.capturedFrontmost()
-        PasteSimulator.pasteAndRestore(item: item, priorApp: prior)
+        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor)
+    }
+
+    func typeItem(_ item: ClipboardItem) {
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
+        guard let text = PasteSimulator.plainText(from: item) else { return }
+        let context = ModelContext(container)
+        let prior = PasteSimulator.capturedFrontmost()
+        ClipboardItemDelivery.deliverWithAutoType(text, item: item, priorApp: prior, context: context, monitor: monitor)
     }
 }

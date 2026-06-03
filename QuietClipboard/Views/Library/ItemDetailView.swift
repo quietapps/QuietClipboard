@@ -97,6 +97,16 @@ struct ItemDetailView: View {
                 )
             }
             .pointerCursor()
+            if PasteSimulator.plainText(from: item) != nil {
+                Button {
+                    coordinator.typeItem(item)
+                } label: {
+                    Label("Type", systemImage: "keyboard")
+                }
+                .pointerCursor()
+            }
+            TextTransformMenu(item: item)
+                .pointerCursor()
             Button {
                 item.isFavorite.toggle()
                 item.modifiedAt = .now

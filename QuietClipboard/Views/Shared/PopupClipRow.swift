@@ -98,6 +98,9 @@ struct PopupClipRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
         )
+        .contextMenu {
+            PopupItemContextMenu(item: item)
+        }
     }
 
     private var pinHelp: String {

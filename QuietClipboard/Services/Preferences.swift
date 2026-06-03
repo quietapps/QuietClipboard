@@ -99,7 +99,21 @@ enum Preferences {
 
     @MainActor static var excludedBundleIDs: Set<String> {
         get { Set((defaults.array(forKey: "QC.ExcludedApps") as? [String]) ?? []) }
-        set { defaults.set(Array(newValue), forKey: "QC.ExcludedApps") }
+        set { defaults.set(Array(newValue).sorted(), forKey: "QC.ExcludedApps") }
+    }
+
+    @MainActor static var soundOnCopy: Bool {
+        get { defaults.bool(forKey: "QC.SoundOnCopy") }
+        set { defaults.set(newValue, forKey: "QC.SoundOnCopy") }
+    }
+
+    @MainActor static var pasteDeliveryMethod: PasteDeliveryMethod {
+        get {
+            guard let raw = defaults.string(forKey: "QC.PasteDelivery"),
+                  let v = PasteDeliveryMethod(rawValue: raw) else { return .standardPaste }
+            return v
+        }
+        set { defaults.set(newValue.rawValue, forKey: "QC.PasteDelivery") }
     }
 
     @MainActor static var linkPreviewsEnabled: Bool {
@@ -148,6 +162,22 @@ enum Preferences {
 
     static let quickSearchDefaultSize = CGSize(width: 1060, height: 480)
     static let quickSearchDefaultPreviewWidth: CGFloat = 380
+    static let quickSearchListLimitDefault = 50
+    static let quickSearchListLimitMax = 500
+
+    @MainActor static var quickSearchListLimit: Int {
+        get {
+            if defaults.object(forKey: "QC.QSListLimit") == nil {
+                return quickSearchListLimitDefault
+            }
+            return clampQuickSearchListLimit(defaults.integer(forKey: "QC.QSListLimit"))
+        }
+        set { defaults.set(clampQuickSearchListLimit(newValue), forKey: "QC.QSListLimit") }
+    }
+
+    @MainActor static func clampQuickSearchListLimit(_ value: Int) -> Int {
+        min(quickSearchListLimitMax, max(1, value))
+    }
 
     @MainActor static var quickSearchPreviewEnabled: Bool {
         get { defaults.object(forKey: "QC.QSPreviewEnabled") as? Bool ?? true }

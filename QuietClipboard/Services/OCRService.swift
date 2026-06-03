@@ -1,5 +1,5 @@
-import Foundation
 @preconcurrency import Vision
+import Foundation
 import AppKit
 
 enum OCRService {
@@ -7,18 +7,17 @@ enum OCRService {
 
     static func recognizeText(in imageData: Data) async -> String? {
         guard let image = NSImage(data: imageData),
-              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
         return await withCheckedContinuation { continuation in
-            let image = cg
             queue.async {
-                continuation.resume(returning: recognizeTextSync(on: image))
+                continuation.resume(returning: recognizeTextSync(on: cgImage))
             }
         }
     }
 
-    /// Runs Vision on the OCR queue; only `CGImage` crosses the async boundary.
+    /// Vision types stay on the OCR queue; only `CGImage` is passed across the async boundary.
     private static func recognizeTextSync(on cgImage: CGImage) -> String? {
         var recognized: String?
         let request = VNRecognizeTextRequest { req, _ in

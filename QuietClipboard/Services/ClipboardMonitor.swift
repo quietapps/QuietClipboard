@@ -176,6 +176,14 @@ final class ClipboardMonitor: ObservableObject {
 
         lastContentHash = hash
 
+        if wasInsert {
+            if isSensitive {
+                CaptureFeedbackSound.playSensitiveCapture()
+            } else {
+                CaptureFeedbackSound.playNewCapture()
+            }
+        }
+
         if wasInsert, let id = resultID {
             Task.detached { [weak self] in
                 await self?.enrich(itemID: id, type: type, snap: snap, payload: payload)

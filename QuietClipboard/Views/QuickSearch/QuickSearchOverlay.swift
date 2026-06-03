@@ -116,7 +116,8 @@ struct QuickSearchOverlay: View {
             },
             onFavorite: favoriteSelected,
             onDelete: deleteSelected,
-            onPin: pinSelected
+            onPin: pinSelected,
+            onType: typeSelected
         ))
         .onExitCommand(perform: onDismiss)
     }
@@ -292,12 +293,13 @@ struct QuickSearchOverlay: View {
         if let cid = categoryFilter {
             items = items.filter { $0.categories.contains { $0.id == cid } }
         }
+        let limit = Preferences.quickSearchListLimit
         if !q.isEmpty {
-            displayItems = Array(ClipSearchMatcher.ranked(items, query: q).prefix(50))
+            displayItems = Array(ClipSearchMatcher.ranked(items, query: q).prefix(limit))
         } else {
             displayItems = items
                 .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
-                .prefix(50)
+                .prefix(limit)
                 .map { $0 }
         }
         selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
@@ -339,7 +341,7 @@ struct QuickSearchOverlay: View {
                 onDismiss()
             })
             Spacer()
-            Text("Pinned filter · ⌥P pin · ⌥F fav · ⌥D del")
+            Text(bottomBarHint)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             BottomBarButton(label: "Quit", systemImage: "power", action: onQuit)
@@ -348,11 +350,25 @@ struct QuickSearchOverlay: View {
         .padding(.vertical, 6)
     }
 
+    private var bottomBarHint: String {
+        if pinnedOnly {
+            return "Pinned · ⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
+        }
+        return "⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
+    }
+
     private func activate() {
         guard displayItems.indices.contains(selectedIndex) else { return }
         let item = displayItems[selectedIndex]
         guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
         onPaste(item)
+    }
+
+    private func typeSelected() {
+        guard let item = previewItem,
+              PasteSimulator.plainText(from: item) != nil else { return }
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        coordinator.typeFromQuickSearch(item)
     }
 
     private func favoriteSelected() {
@@ -523,10 +539,7 @@ private struct PreviewPane: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                StructuredDataBadgeRow(item: item, compact: true)
-                ClipMetadataView(item: item)
-            }
+            ClipMetadataView(item: item)
         }
     }
 }
@@ -617,6 +630,7 @@ struct KeyHandler: NSViewRepresentable {
     var onFavorite: (() -> Void)?
     var onDelete: (() -> Void)?
     var onPin: (() -> Void)?
+    var onType: (() -> Void)?
 
     func makeNSView(context: Context) -> KeyHandlerView {
         let v = KeyHandlerView()
@@ -627,6 +641,7 @@ struct KeyHandler: NSViewRepresentable {
         v.onFavorite = onFavorite
         v.onDelete = onDelete
         v.onPin = onPin
+        v.onType = onType
         return v
     }
 
@@ -638,6 +653,7 @@ struct KeyHandler: NSViewRepresentable {
         nsView.onFavorite = onFavorite
         nsView.onDelete = onDelete
         nsView.onPin = onPin
+        nsView.onType = onType
     }
 }
 
@@ -649,6 +665,7 @@ final class KeyHandlerView: NSView {
     var onFavorite: (() -> Void)?
     var onDelete: (() -> Void)?
     var onPin: (() -> Void)?
+    var onType: (() -> Void)?
 
     private var monitor: Any?
 
@@ -671,6 +688,8 @@ final class KeyHandlerView: NSView {
                     self.onDelete?(); return nil
                 case 35: // P
                     self.onPin?(); return nil
+                case 17: // T
+                    self.onType?(); return nil
                 default:
                     break
                 }

@@ -43,6 +43,9 @@ struct PopupClipCard: View {
             }
         }
         .pointerCursor()
+        .contextMenu {
+            PopupItemContextMenu(item: item)
+        }
     }
 
     private var gridTileBody: some View {

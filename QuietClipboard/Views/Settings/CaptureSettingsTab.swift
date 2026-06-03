@@ -22,6 +22,14 @@ struct CaptureSettingsTab: View {
             }
 
             Section {
+                ExcludedAppsSettingsView()
+            } header: {
+                Text("Excluded apps")
+            } footer: {
+                Text("Copies made while one of these apps is frontmost are ignored. Password managers and banking apps are added automatically on first launch.")
+            }
+
+            Section {
                 CaptureContentTypeSettings(
                     enabledGroups: $enabledCaptureGroups,
                     capturedTypes: $capturedTypes

@@ -109,6 +109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct AppSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var monitor: ClipboardMonitor
+    @State private var quickSearchListLimitText = "\(Preferences.quickSearchListLimitDefault)"
+    @FocusState private var quickSearchListLimitFocused: Bool
 
     var body: some View {
         TabView {
@@ -126,11 +128,14 @@ struct AppSettingsView: View {
                 .tabItem { Label("Storage", systemImage: "internaldrive") }
         }
         .frame(width: 620, height: 720)
+        .onAppear {
+            quickSearchListLimitText = "\(Preferences.quickSearchListLimit)"
+        }
     }
 
     private var generalTab: some View {
         Form {
-            Section("General") {
+            Section {
                 Toggle("Launch at login", isOn: Binding(
                     get: { Preferences.launchAtLogin },
                     set: { Preferences.launchAtLogin = $0; coordinator.objectWillChange.send() }
@@ -139,6 +144,25 @@ struct AppSettingsView: View {
                     get: { monitor.isPaused },
                     set: { monitor.setPaused($0) }
                 ))
+                Toggle("Sound on capture", isOn: Binding(
+                    get: { Preferences.soundOnCopy },
+                    set: { Preferences.soundOnCopy = $0 }
+                ))
+                Picker("Default paste method", selection: Binding(
+                    get: { Preferences.pasteDeliveryMethod },
+                    set: {
+                        Preferences.pasteDeliveryMethod = $0
+                        coordinator.objectWillChange.send()
+                    }
+                )) {
+                    ForEach(PasteDeliveryMethod.allCases) { method in
+                        Text(method.displayName).tag(method)
+                    }
+                }
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Sound plays when a new clip is saved; a lower tone plays for sensitive captures. Auto-type sends keystrokes for apps that block paste (banking, RDP).")
             }
             Section("Appearance") {
                 Picker("List previews", selection: Binding(
@@ -159,7 +183,18 @@ struct AppSettingsView: View {
                     }
                 }
             }
-            Section("Quick search popup") {
+            Section {
+                LabeledContent("Clips in list") {
+                    TextField("", text: $quickSearchListLimitText)
+                        .frame(width: 72)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($quickSearchListLimitFocused)
+                        .onSubmit(commitQuickSearchListLimit)
+                        .onChange(of: quickSearchListLimitFocused) { _, focused in
+                            if !focused { commitQuickSearchListLimit() }
+                        }
+                }
                 Picker("Open at", selection: Binding(
                     get: { Preferences.quickSearchPlacement },
                     set: { Preferences.quickSearchPlacement = $0; coordinator.objectWillChange.send() }
@@ -186,6 +221,10 @@ struct AppSettingsView: View {
                         }
                     }
                 }
+            } header: {
+                Text("Quick search popup")
+            } footer: {
+                Text("Maximum clips shown when browsing or searching in Quick Search. Default \(Preferences.quickSearchListLimitDefault), up to \(Preferences.quickSearchListLimitMax). Older clips stay in the Library.")
             }
             Section("Popup filter bar") {
                 Text("Choose which filters appear in the Quick Search popup.")
@@ -219,6 +258,22 @@ struct AppSettingsView: View {
     private func primaryDisplayID() -> CGDirectDisplayID {
         let id = (NSScreen.main?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
         return CGDirectDisplayID(id)
+    }
+
+    private func commitQuickSearchListLimit() {
+        let trimmed = quickSearchListLimitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = Int(trimmed) else {
+            quickSearchListLimitText = "\(Preferences.quickSearchListLimit)"
+            return
+        }
+        let clamped = Preferences.clampQuickSearchListLimit(parsed)
+        if Preferences.quickSearchListLimit != clamped {
+            Preferences.quickSearchListLimit = clamped
+            coordinator.objectWillChange.send()
+        }
+        if quickSearchListLimitText != "\(clamped)" {
+            quickSearchListLimitText = "\(clamped)"
+        }
     }
 
     private func quickSearchFilterBinding(_ filter: QuickSearchPopupFilter) -> Binding<Bool> {

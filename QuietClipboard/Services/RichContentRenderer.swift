@@ -93,16 +93,24 @@ enum RichContentRenderer {
     }
 
     private static func markdownAttributedString(_ markdown: String) -> NSAttributedString? {
-        var full = AttributedString.MarkdownParsingOptions()
-        full.interpretedSyntax = .full
-        if let parsed = try? AttributedString(markdown: markdown, options: full) {
+        if let parsed = try? AttributedString(markdown: markdown, options: markdownOptions(.full)) {
             return NSAttributedString(parsed)
         }
-        var inline = AttributedString.MarkdownParsingOptions()
-        inline.interpretedSyntax = .inlineOnlyPreservingWhitespace
-        if let parsed = try? AttributedString(markdown: markdown, options: inline) {
+        if let parsed = try? AttributedString(
+            markdown: markdown,
+            options: markdownOptions(.inlineOnlyPreservingWhitespace)
+        ) {
             return NSAttributedString(parsed)
         }
         return NSAttributedString(string: markdown)
+    }
+
+    private static func markdownOptions(
+        _ syntax: AttributedString.MarkdownParsingOptions.InterpretedSyntax
+    ) -> AttributedString.MarkdownParsingOptions {
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = syntax
+        options.failurePolicy = .returnPartiallyParsedIfPossible
+        return options
     }
 }

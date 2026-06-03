@@ -187,6 +187,16 @@ struct ItemContextMenu: View {
             Label(isRedacted ? "Reveal" : "Copy", systemImage: isRedacted ? "lock.open" : "doc.on.doc")
         }
 
+        if !isRedacted, PasteSimulator.plainText(from: item) != nil {
+            Button {
+                coordinator.typeItem(item)
+            } label: {
+                Label("Type into App", systemImage: "keyboard")
+            }
+        }
+
+        TextTransformMenu(item: item)
+
         Button {
             item.isFavorite.toggle()
             item.modifiedAt = .now
