@@ -13,9 +13,17 @@ struct PopupClipCard: View {
     let onDelete: () -> Void
 
     @AppStorage("QC.ClipPreviewStyle") private var styleRaw: String = ClipPreviewStyle.rich.rawValue
+    @State private var isHovered: Bool = false
 
     private var clipPreviewStyle: ClipPreviewStyle {
         ClipPreviewStyle(rawValue: styleRaw) ?? .rich
+    }
+
+    private var isTextBased: Bool {
+        switch item.contentType {
+        case .text, .richText, .code, .other: return true
+        default: return false
+        }
     }
 
     var body: some View {
@@ -31,12 +39,25 @@ struct PopupClipCard: View {
                 }
             }
         }
-        .frame(height: layout == .gridTile ? LibraryGridMetrics.tileHeight : nil)
+        .frame(height: layout == .gridTile ? LibraryGridMetrics.popupTileHeight : nil)
         .frame(maxWidth: layout == .gridTile ? .infinity : nil)
         .clipped()
-        .background(cardBackground)
-        .overlay(cardStroke)
+        .background(layout == .gridTile ? nil : cardBackground)
+        .overlay(layout == .gridTile ? nil : cardStroke)
+        .clipShape(RoundedRectangle(cornerRadius: layout == .gridTile ? 18 : 8))
+        .overlay(
+            layout == .gridTile
+                ? RoundedRectangle(cornerRadius: 18).stroke(
+                    isSelected ? Color.accentColor : (isHovered ? Color.white.opacity(0.3) : Color.clear),
+                    lineWidth: isSelected ? 2 : 1
+                )
+                : nil
+        )
         .contentShape(Rectangle())
+        .onHover { hovered in
+            if layout == .gridTile { isHovered = hovered }
+        }
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
         .onTapGesture {
             if coordinator.shouldProceedWithSensitiveAction(for: item) {
                 onActivate()
@@ -48,71 +69,129 @@ struct PopupClipCard: View {
         }
     }
 
+    // MARK: - Grid tile (matches LibraryCard dark design)
+
     private var gridTileBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topTrailing) {
-                ClipboardItemPreview(item: item, compactRedaction: true)
-                    .frame(height: LibraryGridMetrics.previewHeight)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
+        ZStack(alignment: .bottom) {
+            (isTextBased ? Color(white: 0.13) : Color.black)
 
-                HStack(spacing: 4) {
-                    if pinned.isPinned(item.id) {
-                        badgeIcon("pin.fill", color: .orange)
-                    }
-                    if item.isSensitive, !coordinator.isSensitiveRevealed(item.id) {
-                        badgeIcon("lock.fill", color: .secondary)
-                    }
-                    if item.isFavorite {
-                        badgeIcon("star.fill", color: .yellow)
-                    }
-                    Image(systemName: item.contentType.systemImage)
-                        .font(.caption2)
-                        .padding(4)
-                        .background(.thinMaterial, in: Circle())
+            if isTextBased {
+                SensitiveContentGate(item: item, compact: true) {
+                    Text(item.textContent ?? item.title ?? "")
+                        .font(.system(
+                            item.contentType == .code ? .caption : .callout,
+                            design: item.contentType == .code ? .monospaced : .default
+                        ))
+                        .fontWeight(item.contentType == .code ? .regular : .semibold)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 36)
+                        .padding(.bottom, 26)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
-                .padding(6)
+            } else {
+                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            gridTileFooter
-                .frame(height: LibraryGridMetrics.footerHeight, alignment: .top)
-        }
-        .frame(maxHeight: LibraryGridMetrics.tileHeight, alignment: .top)
-    }
-
-    private func badgeIcon(_ name: String, color: Color) -> some View {
-        Image(systemName: name)
-            .font(.caption2)
-            .foregroundStyle(color)
-            .padding(4)
-            .background(.thinMaterial, in: Circle())
-    }
-
-    private var gridTileFooter: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SensitiveClipLabel(item: item, font: .caption, lineLimit: 2, monospaced: item.contentType == .code)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 4) {
-                ClipSourceIcon(item: item, size: 10)
-                Text(item.sourceAppName ?? "Unknown")
-                    .font(.caption2)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+            if isTextBased {
+                HStack(spacing: 4) {
+                    ClipSourceIcon(item: item, size: 12)
+                    Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LinearGradient(
+                    gradient: Gradient(colors: [.clear, .black.opacity(0.6)]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 48)
+                .overlay(alignment: .bottomLeading) {
+                    HStack(spacing: 4) {
+                        ClipSourceIcon(item: item, size: 12)
+                        Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+                }
             }
-            .foregroundStyle(.secondary)
 
-            actionRow
+            if isHovered {
+                VStack {
+                    HStack(alignment: .top) {
+                        Image(systemName: item.contentType.systemImage)
+                            .font(.callout)
+                            .padding(7)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                            .foregroundStyle(.white)
+
+                        Spacer()
+
+                        Button(role: .destructive, action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.callout)
+                                .padding(7)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .foregroundStyle(.red.opacity(0.9))
+                        }
+                        .buttonStyle(.borderless)
+
+                        Button(action: onToggleFavorite) {
+                            Image(systemName: item.isFavorite ? "star.fill" : "star")
+                                .font(.callout)
+                                .padding(7)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                                .foregroundStyle(item.isFavorite ? Color.yellow : .white)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(8)
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
+
+            if pinned.isPinned(item.id) || item.isSensitive && !coordinator.isSensitiveRevealed(item.id) || item.isFavorite {
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            if pinned.isPinned(item.id) {
+                                Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.orange)
+                                    .padding(4).background(.thinMaterial, in: Circle())
+                            }
+                            if item.isSensitive, !coordinator.isSensitiveRevealed(item.id) {
+                                Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                                    .padding(4).background(.thinMaterial, in: Circle())
+                            }
+                            if item.isFavorite {
+                                Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                                    .padding(4).background(.thinMaterial, in: Circle())
+                            }
+                        }
+                        .padding(6)
+                        .opacity(isHovered ? 0 : 1)
+                    }
+                    Spacer()
+                }
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    // MARK: - Flexible / compact layouts (unchanged)
 
     private var flexibleRichBody: some View {
         VStack(alignment: .leading, spacing: 6) {

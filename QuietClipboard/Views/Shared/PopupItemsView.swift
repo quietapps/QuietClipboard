@@ -14,7 +14,7 @@ struct PopupItemsView: View {
     @AppStorage("QC.ClipPreviewStyle") private var styleRaw: String = ClipPreviewStyle.rich.rawValue
 
     private var gridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 8)]
+        [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 10)]
     }
 
     var body: some View {
@@ -43,12 +43,12 @@ struct PopupItemsView: View {
     }
 
     private var gridBody: some View {
-        LazyVGrid(columns: gridColumns, spacing: 8) {
+        LazyVGrid(columns: gridColumns, spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
                 card(for: item, at: idx)
             }
         }
-        .padding(8)
+        .padding(10)
     }
 
     @ViewBuilder
@@ -80,7 +80,7 @@ struct PopupItemsView: View {
             onDelete: { onDelete(item) }
         )
         .frame(maxWidth: .infinity)
-        .frame(height: LibraryGridMetrics.tileHeight)
+        .frame(height: LibraryGridMetrics.popupTileHeight)
         .id(item.id)
         .onHover { inside in
             guard inside, let onHoverIndex else { return }
