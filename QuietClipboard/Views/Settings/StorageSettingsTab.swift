@@ -5,133 +5,120 @@ struct StorageSettingsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var retention: RetentionPeriod = Preferences.retention
     @State private var cleanupAge: CleanupAgeOption = .days7
-    @State private var usage: Int64 = 0
     @State private var historyCounts = RetentionManager.HistoryCounts(total: 0, favorites: 0)
     @State private var staleCount: Int = 0
     @State private var status: StorageStatusMessage?
     @State private var showClearAllConfirm = false
     @State private var showClearNonFavConfirm = false
     @State private var showAgeCleanupConfirm = false
-    @State private var usageStats: ClipboardUsageStats = .empty
-    @State private var usageStatsLoading = false
 
     private var manager: RetentionManager {
         RetentionManager(container: coordinator.container)
     }
 
     var body: some View {
-        Form {
+        SettingsScrollContent {
             if let status {
-                Section {
-                    StorageStatusBanner(message: status)
-                }
+                StorageStatusBanner(message: status)
             }
 
-            Section {
-                StorageOverviewCard(
-                    usageBytes: usage,
-                    counts: historyCounts,
-                    onRefresh: refreshMetrics
-                )
-            }
-
-            Section {
-                UsageStatsDashboardView(stats: usageStats, isLoading: usageStatsLoading)
-            } header: {
-                Label("Usage", systemImage: "chart.bar.fill")
-            } footer: {
-                Text("Based on copy events from the last 14 days. All processing stays on your Mac.")
-            }
-
-            Section {
-                Picker("Auto-delete after", selection: $retention) {
+            SettingsCard(
+                title: "Automatic retention",
+                systemImage: "clock.arrow.circlepath",
+                footer: "Runs daily. Favorites are never removed automatically."
+            ) {
+                SettingsPickerRow(title: "Auto-delete after", selection: $retention) {
                     ForEach(RetentionPeriod.allCases) { period in
                         Text(period.displayName).tag(period)
                     }
                 }
-                .pickerStyle(.menu)
                 .onChange(of: retention) { _, value in
                     Preferences.retention = value
                 }
-            } header: {
-                Label("Automatic retention", systemImage: "clock.arrow.circlepath")
-            } footer: {
-                Text("Runs daily. Favorites are never removed automatically.")
             }
 
-            Section {
-                Picker("Older than", selection: $cleanupAge) {
+            SettingsCard(
+                title: "Manual cleanup",
+                systemImage: "slider.horizontal.3",
+                footer: "Removes non-favorited clips whose last copy is older than the selected window."
+            ) {
+                SettingsPickerRow(title: "Older than", selection: $cleanupAge) {
                     ForEach(CleanupAgeOption.allCases) { option in
                         Text(option.displayName).tag(option)
                     }
                 }
-                .pickerStyle(.menu)
                 .onChange(of: cleanupAge) { _, _ in
                     refreshStaleCount()
                 }
 
-                LabeledContent("Eligible clips") {
+                SettingsInsetDivider()
+
+                SettingsValueRow(title: "Eligible clips") {
                     staleCountLabel
                 }
 
-                Button {
+                SettingsInsetDivider()
+
+                SettingsActionButton(
+                    title: "Clean up now",
+                    systemImage: "trash",
+                    variant: .primary
+                ) {
                     showAgeCleanupConfirm = true
-                } label: {
-                    Label("Clean up now", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 .disabled(staleCount == 0)
-            } header: {
-                Label("Manual cleanup", systemImage: "slider.horizontal.3")
-            } footer: {
-                Text("Removes non-favorited clips whose last copy is older than the selected window.")
             }
 
-            Section {
-                Button(role: .destructive) {
-                    showClearNonFavConfirm = true
-                } label: {
-                    Label("Clear all non-favorites", systemImage: "star.slash")
-                }
+            SettingsCard(
+                title: "Danger zone",
+                systemImage: "exclamationmark.triangle",
+                footer: "Erase entire history includes favorites and cannot be undone."
+            ) {
+                SettingsActionStack {
+                    SettingsActionButton(
+                        title: "Clear all non-favorites",
+                        systemImage: "star.slash",
+                        variant: .destructive
+                    ) {
+                        showClearNonFavConfirm = true
+                    }
 
-                Button(role: .destructive) {
-                    showClearAllConfirm = true
-                } label: {
-                    Label("Erase entire history", systemImage: "trash.fill")
+                    SettingsActionButton(
+                        title: "Erase entire history",
+                        systemImage: "trash.fill",
+                        variant: .destructive
+                    ) {
+                        showClearAllConfirm = true
+                    }
                 }
-            } header: {
-                Label("Danger zone", systemImage: "exclamationmark.triangle")
-            } footer: {
-                Text("Erase entire history includes favorites and cannot be undone.")
             }
 
-            Section {
-                HStack(spacing: 12) {
-                    Button {
+            SettingsCard(
+                title: "Backup",
+                systemImage: "externaldrive",
+                footer: "Full history export for backup or moving to another Mac."
+            ) {
+                HStack(alignment: .center, spacing: 10) {
+                    SettingsActionButton(
+                        title: "Export JSON",
+                        systemImage: "square.and.arrow.up",
+                        variant: .secondary
+                    ) {
                         exportAction()
-                    } label: {
-                        Label("Export JSON", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
                     }
-                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
 
-                    Button {
+                    SettingsActionButton(
+                        title: "Import JSON",
+                        systemImage: "square.and.arrow.down",
+                        variant: .secondary
+                    ) {
                         importAction()
-                    } label: {
-                        Label("Import JSON", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
                     }
-                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
                 }
-            } header: {
-                Label("Backup", systemImage: "externaldrive")
-            } footer: {
-                Text("Full history export for backup or moving to another Mac.")
             }
         }
-        .formStyle(.grouped)
         .onAppear { refreshMetrics() }
         .confirmationDialog("Erase entire history?", isPresented: $showClearAllConfirm) {
             Button("Erase everything", role: .destructive) { performClearAll() }
@@ -159,7 +146,7 @@ struct StorageSettingsTab: View {
     private var staleCountLabel: some View {
         if staleCount == 0 {
             Text("None")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SettingsChrome.secondaryText)
         } else {
             Text("\(staleCount)")
                 .fontWeight(.medium)
@@ -168,19 +155,8 @@ struct StorageSettingsTab: View {
     }
 
     private func refreshMetrics() {
-        usage = RetentionManager.storageUsage()
         historyCounts = manager.historyCounts()
         refreshStaleCount()
-        refreshUsageStats()
-    }
-
-    private func refreshUsageStats() {
-        usageStatsLoading = true
-        let container = coordinator.container
-        Task { @MainActor in
-            usageStats = ClipboardUsageStatsService.compute(container: container)
-            usageStatsLoading = false
-        }
     }
 
     private func refreshStaleCount() {
@@ -257,7 +233,7 @@ private enum StorageStatusMessage: Equatable {
     var tint: Color {
         switch self {
         case .success: return .green
-        case .info: return .secondary
+        case .info: return SettingsChrome.secondaryText
         case .error: return .orange
         }
     }
@@ -273,69 +249,16 @@ private struct StorageStatusBanner: View {
                 .font(.title3)
             Text(message.text)
                 .font(.callout)
+                .foregroundStyle(SettingsChrome.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SettingsChrome.cardBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(SettingsChrome.cardStroke, lineWidth: 1)
+        )
     }
 }
 
-private struct StorageOverviewCard: View {
-    let usageBytes: Int64
-    let counts: RetentionManager.HistoryCounts
-    let onRefresh: () -> Void
-
-    private var usageText: String {
-        ByteCountFormatter.string(fromByteCount: usageBytes, countStyle: .file)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                Image(systemName: "internaldrive")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
-                    .frame(width: 36, height: 36)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(usageText)
-                        .font(.title2.bold())
-                    Text("on disk")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .help("Refresh")
-            }
-
-            HStack(spacing: 0) {
-                statBlock(value: counts.total, label: "Total", icon: "tray.full")
-                Divider().frame(height: 36)
-                statBlock(value: counts.favorites, label: "Favorites", icon: "star.fill")
-                Divider().frame(height: 36)
-                statBlock(value: counts.nonFavorites, label: "Other", icon: "doc.on.doc")
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func statBlock(value: Int, label: String, icon: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("\(value)")
-                .font(.headline.monospacedDigit())
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}

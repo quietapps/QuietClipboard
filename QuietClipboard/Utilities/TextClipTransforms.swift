@@ -115,7 +115,33 @@ enum TextClipTransforms {
 
 extension ClipboardItem {
     var resolvedText: String? {
-        if let t = textContent, !t.isEmpty { return t }
-        return String(data: content, encoding: .utf8)
+        if let t = textContent?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+            return t
+        }
+        if let rich = RichContentRenderer.markdownPlainText(for: self)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !rich.isEmpty {
+            return rich
+        }
+        if let utf8 = String(data: content, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !utf8.isEmpty {
+            return utf8
+        }
+        return nil
+    }
+
+    var displaySummary: String {
+        if let t = title?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+            return t
+        }
+        if let t = resolvedText {
+            let first = t.split(separator: "\n").first.map(String.init) ?? t
+            let line = String(first.prefix(120))
+            if !line.isEmpty { return line }
+        }
+        switch contentType {
+        case .richText: return "Rich text"
+        case .other where fileMIMEType == PasteboardHelper.archiveMIME: return "Clipboard content"
+        default: return "Untitled"
+        }
     }
 }

@@ -6,39 +6,44 @@ struct CaptureContentTypeSettings: View {
     @Binding var capturedTypes: Set<ClipboardContentType>
 
     var body: some View {
-        ForEach(CaptureContentGroup.allCases) { group in
-            Section {
-                Toggle(isOn: parentBinding(for: group)) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(group.displayName)
-                            Text(group.summary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: group.systemImage)
-                    }
-                }
+        ForEach(Array(CaptureContentGroup.allCases.enumerated()), id: \.element.id) { index, group in
+            groupBlock(group)
+            if index < CaptureContentGroup.allCases.count - 1 {
+                SettingsInsetDivider()
+            }
+        }
+    }
 
-                if group.contentTypes.count > 1 {
-                    if enabledGroups.contains(group) {
-                        ForEach(group.contentTypes) { type in
-                            Toggle(isOn: childBinding(type: type, group: group)) {
-                                Label(type.displayName, systemImage: type.systemImage)
-                            }
-                            .padding(.leading, 8)
-                        }
-                    } else {
-                        ForEach(group.contentTypes) { type in
-                            Label(type.displayName, systemImage: type.systemImage)
-                                .foregroundStyle(.tertiary)
-                                .padding(.leading, 8)
-                        }
-                    }
+    @ViewBuilder
+    private func groupBlock(_ group: CaptureContentGroup) -> some View {
+        SettingsToggleRow(
+            title: group.displayName,
+            subtitle: group.summary,
+            isOn: parentBinding(for: group)
+        )
+
+        if group.contentTypes.count > 1 {
+            if enabledGroups.contains(group) {
+                ForEach(group.contentTypes) { type in
+                    childToggle(type: type, group: group)
+                }
+            } else {
+                ForEach(group.contentTypes) { type in
+                    SettingsDisabledTypeRow(
+                        title: type.displayName,
+                        systemImage: type.systemImage
+                    )
                 }
             }
         }
+    }
+
+    private func childToggle(type: ClipboardContentType, group: CaptureContentGroup) -> some View {
+        SettingsToggleRow(
+            title: type.displayName,
+            indent: SettingsChrome.nestedRowIndent,
+            isOn: childBinding(type: type, group: group)
+        )
     }
 
     private func parentBinding(for group: CaptureContentGroup) -> Binding<Bool> {

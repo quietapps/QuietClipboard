@@ -11,6 +11,7 @@ enum RichContentRenderer {
     static func previewKind(for item: ClipboardItem) -> PreviewKind {
         switch item.contentType {
         case .richText: return .rtf
+        case .other where item.fileMIMEType == PasteboardHelper.archiveMIME: return .plain
         case .markdown: return .markdown
         case .text, .other:
             if let text = item.textContent, ContentTypeDetector.looksLikeMarkdown(text) {
@@ -41,7 +42,7 @@ enum RichContentRenderer {
     static func attributedPreview(for item: ClipboardItem) -> NSAttributedString? {
         switch previewKind(for: item) {
         case .rtf:
-            return rtfAttributedString(from: item.content)
+            return attributedStringFromStoredContent(item)
         case .markdown:
             guard let text = markdownPlainText(for: item) else { return nil }
             return markdownAttributedString(text)
@@ -58,15 +59,17 @@ enum RichContentRenderer {
             .trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
             return s
         }
-        if item.contentType == .richText,
-           let attr = rtfAttributedString(from: item.content) {
-            return attr.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if item.contentType == .richText || item.fileMIMEType == "text/html"
+            || item.fileMIMEType == "text/rtf" || item.fileMIMEType == "application/rtfd",
+           let attr = attributedStringFromStoredContent(item) {
+            let plain = attr.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plain.isEmpty { return plain }
         }
         return nil
     }
 
     static func rtfData(for item: ClipboardItem) -> Data? {
-        if item.contentType == .richText, !item.content.isEmpty {
+        if item.contentType == .richText, item.fileMIMEType == "text/rtf", !item.content.isEmpty {
             return item.content
         }
         guard let text = markdownPlainText(for: item) else { return nil }
@@ -83,11 +86,46 @@ enum RichContentRenderer {
         return Data(text.utf8)
     }
 
+    private static func attributedStringFromStoredContent(_ item: ClipboardItem) -> NSAttributedString? {
+        guard !item.content.isEmpty else { return nil }
+        switch item.fileMIMEType {
+        case "text/html":
+            return htmlAttributedString(from: item.content)
+        case "application/rtfd":
+            return rtfdAttributedString(from: item.content)
+        default:
+            return rtfAttributedString(from: item.content)
+                ?? htmlAttributedString(from: item.content)
+                ?? rtfdAttributedString(from: item.content)
+        }
+    }
+
     private static func rtfAttributedString(from data: Data) -> NSAttributedString? {
         guard !data.isEmpty else { return nil }
         return try? NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+        )
+    }
+
+    private static func rtfdAttributedString(from data: Data) -> NSAttributedString? {
+        guard !data.isEmpty else { return nil }
+        return try? NSAttributedString(
+            data: data,
+            options: [.documentType: NSAttributedString.DocumentType.rtfd],
+            documentAttributes: nil
+        )
+    }
+
+    private static func htmlAttributedString(from data: Data) -> NSAttributedString? {
+        guard !data.isEmpty else { return nil }
+        return try? NSAttributedString(
+            data: data,
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
             documentAttributes: nil
         )
     }

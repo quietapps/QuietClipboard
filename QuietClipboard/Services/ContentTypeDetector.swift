@@ -8,8 +8,18 @@ enum ContentTypeDetector {
         if snap.png != nil || snap.tiff != nil {
             return .image
         }
+        if snap.rtf != nil || snap.rtfd != nil {
+            return .richText
+        }
+        if let html = snap.html,
+           !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .richText
+        }
         if let s = snap.string {
             let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return !snap.types.isEmpty ? .other : .text
+            }
             if trimmed.lowercased().hasPrefix("<svg") || trimmed.contains("<svg ") {
                 return .svg
             }
@@ -25,16 +35,10 @@ enum ContentTypeDetector {
             if looksLikeCode(trimmed) {
                 return .code
             }
-        }
-        if snap.rtf != nil || snap.rtfd != nil {
-            return .richText
-        }
-        // HTML with hyperlinks (e.g. browser copies) = rich text even without RTF
-        if let html = snap.html, html.contains("href") {
-            return .richText
-        }
-        if snap.string != nil {
             return .text
+        }
+        if !snap.types.isEmpty {
+            return .other
         }
         return .other
     }
@@ -91,8 +95,14 @@ enum ContentTypeDetector {
             return snap.string?.trimmingCharacters(in: .whitespacesAndNewlines)
         default:
             if let s = snap.string {
-                let first = s.split(separator: "\n").first.map(String.init) ?? s
-                return String(first.prefix(120))
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    let first = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
+                    return String(first.prefix(120))
+                }
+            }
+            if let html = snap.html?.trimmingCharacters(in: .whitespacesAndNewlines), !html.isEmpty {
+                return String(html.prefix(120))
             }
             return nil
         }

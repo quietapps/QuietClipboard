@@ -30,7 +30,7 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 
 ## Features
 
-**Current release (Xcode):** version **0.1.3**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
+**Current release (Xcode):** version **0.1.4**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
 
 ### Capture & history
 
@@ -60,7 +60,7 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 - **Code highlighting** — language detection and syntax-colored previews
 - **Color swatches** — hex, rgb, hsl, named CSS; copy any format from detail
 - **Link previews & favicons** — `LPMetadataProvider` cards plus domain favicons on rows
-- **Markdown / RTF** — rendered previews; export `.md` / `.rtf`
+- **Markdown / RTF** — rendered previews; export `.md` / `.rtf`; styled HTML/RTFD from apps (badges, pills) captured and pasted back faithfully when plain text is empty
 - **OCR** — Vision text extraction on images; searchable
 - **Structured data badges** — email, phone, UUID, ISO date, IBAN, IP, semver; copy normalized value or create local Reminder/Contact
 
@@ -68,7 +68,10 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 
 - **Favorites, pins & categories** — favorites (stars); ten pinned slots (separate from favorites); custom categories with icons/colors; auto category suggestions
 - **Sensitive content** — on-device detection; don’t save, **save but hide** (blur until Reveal), or save normally
-- **Retention & storage** — auto-delete by age; manual cleanup; **usage charts** (copies/day, top apps, types, busiest hours)
+- **Retention & storage** — auto-delete by age; manual cleanup; disk usage and JSON backup in **Settings → Storage**
+- **Usage statistics** — **Settings → Statistics**: copies/day, top apps, types, busiest hours (on-device)
+- **Settings** — sidebar panels aligned with the Library look; resizable window; **Statistics** split from Storage
+- **Excluded apps** — ignore copies while a chosen app is frontmost; **Recommended** list; first launch excludes 1Password and Keychain Access by default
 - **Export / Import** — JSON backup with metadata
 - **WidgetKit widgets** — Small, Medium, Large with AppIntents
 - **Privacy first** — offline; no analytics; optional link previews only network call; data in `~/Library/Application Support/QuietClipboard/`
@@ -88,7 +91,7 @@ The cask strips the macOS quarantine attribute on install so Gatekeeper does not
 
 ### Direct download
 
-1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.1.3**)
+1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.1.4**)
 2. Unzip → drag **Quiet Clipboard.app** into `/Applications`
 3. Strip the quarantine attribute (or right-click → Open once):
 
@@ -197,7 +200,8 @@ rm -rf ~/Library/Preferences/app.quiet.QuietClipboard.plist \
 | Delete an item | Right-click → **Delete** |
 | Clear all history | Settings → Storage → **Erase entire history** (confirmation) |
 | Clean up by age | Settings → Storage → pick age → **Clean up now** |
-| View usage charts | Settings → Storage → **Usage** section |
+| View usage charts | Settings → **Statistics** |
+| Exclude an app from capture | Settings → Capture → **Excluded apps** → Add app or **Recommended** |
 | Reveal hidden sensitive clip | Tap **Reveal** on blurred item, or use badge/menu |
 | Structured data actions | Tap type badge (email, date, …) → copy / Reminder / Contact |
 | Export history | Settings → Storage → **Export JSON** |
@@ -268,7 +272,9 @@ QuietClipboard/
 │   ├── ClipSearchRanker.swift       # Fuzzy ranked search (on-device)
 │   ├── PinnedClipStore.swift        # Ten permanent pinned slots
 │   ├── StructuredDataDetector.swift # Email, phone, UUID, date, IBAN, IP, semver
-│   ├── ClipboardUsageStats.swift  # Settings usage charts
+│   ├── ClipboardUsageStats.swift  # Statistics panel charts
+│   ├── ExcludedAppsCatalog.swift  # Recommended exclusions + first-launch defaults
+│   ├── RichContentRenderer.swift  # Styled RTF/HTML preview & paste
 │   ├── SensitiveDetector.swift      # On-device secrets detection
 │   ├── OCRService.swift             # Vision VNRecognizeTextRequest
 │   ├── LinkPreviewService.swift     # LPMetadataProvider + cache
@@ -282,7 +288,7 @@ QuietClipboard/
 │   ├── NotchPanel/                  # Notch shelf + Dynamic Island
 │   ├── QuickSearch/                 # Spotlight-style overlay
 │   ├── Library/                     # Full window, sidebar, grid, detail
-│   ├── Settings/                    # Tabs: General, Capture, Shortcuts, Storage, About
+│   ├── Settings/                    # Sidebar: General, Quick Search, Capture, Shortcuts, Statistics, Storage, About
 │   └── Shared/                      # Previews, badges, sensitive redaction, popover rows
 ├── Widgets/                         # WidgetKit: Small, Medium, Large
 └── Utilities/                       # Pasteboard helpers, date formatting, color parsing
@@ -324,13 +330,13 @@ To paste back into the app that was focused before you opened the quick search o
 Open quick search (`Ctrl+Cmd+V`) and type the hex value or the word "color". The filter bar also has a Colors filter to show only color items.
 
 **Can I exclude certain apps from being captured?**
-Yes — Settings → Capture → Excluded apps. Add any app and copies made while it is frontmost will be ignored.
+Yes — Settings → Capture → **Excluded apps**. Use **Add app** or pick from **Recommended** (password managers, banking, remote desktop). On first launch, 1Password and Keychain Access are excluded by default; add or remove apps anytime.
 
 **Where do I open Settings from the Library window?**
 Use the gear in the library toolbar — it opens the same Settings window as the menu bar.
 
 **How much disk space does the history use?**
-Depends on how many images and screenshots you copy. Text-only histories stay small. Settings → Storage shows disk usage, clip counts, and usage charts (copies per day, top apps, busiest hours). Adjust retention or run **Clean up now** if needed.
+Depends on how many images and screenshots you copy. Text-only histories stay small. **Settings → Storage** shows disk usage and cleanup; **Settings → Statistics** has usage charts (copies per day, top apps, busiest hours). Adjust retention or run **Clean up now** if needed.
 
 **How do I move history to a new Mac?**
 Settings → Storage → **Export JSON** on the old machine. Copy the file to the new Mac. Install Quiet Clipboard, then Settings → Storage → **Import JSON**.

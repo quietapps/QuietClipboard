@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
+## [0.1.4] — 2026-06-03
+
+Version **0.1.4**
+
+### Build 1
+
+#### Added
+
+- **Settings redesign** — sidebar panels (General, Quick Search, Capture, Keyboard Shortcuts, **Statistics**, Storage, About) with Library-matched dark chrome, card layout, and a resizable Settings window (min 620×480)
+- **Statistics panel** — storage overview and usage charts (copies/day, top apps, types, busiest hours) moved out of Storage for a clearer split
+- **Excluded apps UI** — compact app chips with icons, per-app remove, **Add app** picker, and **Recommended** sheet (password managers, banking, remote desktop)
+- **Excluded apps defaults** — first launch seeds only **1Password** and **Keychain Access**; full list stays optional via Recommended
+- **Compact settings actions** — `SettingsActionButton` `.compact` size for inline toolbars (excluded-apps row) with readable subheadline labels
+
+#### Changed
+
+- **Storage panel** — retention, manual cleanup, danger zone, and JSON backup/import only (charts live under Statistics)
+- **Settings rows** — toggles and pickers align in a fixed trailing control column; action button labels centered
+- **Rich clipboard capture** — prefers RTF/HTML/RTFD when plain text is empty; HTML styling without links treated as rich text
+- **Pasteboard restore** — archives pasteboard types on copy-back for lossless paste of styled content
+- **Previews & paste** — `RichContentRenderer` and `TextClipTransforms` improve display and paste fallbacks for styled clips (e.g. pill/badge UI from browsers)
+
+#### Fixed
+
+- **Blank styled clips** — copying rich UI (styled text, badges, pills) no longer saves or previews as empty content
+- **Excluded apps footer** — copy reflects the smaller default set and Recommended flow
+
+---
+
 ## [0.1.3] — 2026-06-03
 
 Version **0.1.3**

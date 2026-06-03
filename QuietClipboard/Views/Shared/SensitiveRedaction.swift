@@ -132,6 +132,6 @@ enum SensitiveRedaction {
         if item.isSensitive, !isRevealed {
             return "Sensitive content"
         }
-        return item.title ?? item.textContent ?? "Untitled"
+        return item.displaySummary
     }
 }

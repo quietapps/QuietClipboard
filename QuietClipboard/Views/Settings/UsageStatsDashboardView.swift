@@ -47,6 +47,7 @@ struct UsageStatsDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Copies per day", systemImage: "calendar")
                 .font(.subheadline.bold())
+                .foregroundStyle(SettingsChrome.primaryText)
             Chart(stats.copiesPerDay) { point in
                 BarMark(
                     x: .value("Day", point.day, unit: .day),
@@ -89,6 +90,7 @@ struct UsageStatsDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Busiest hours", systemImage: "clock")
                 .font(.subheadline.bold())
+                .foregroundStyle(SettingsChrome.primaryText)
             Chart(stats.busiestHours) { point in
                 BarMark(
                     x: .value("Hour", point.hour),
@@ -129,16 +131,18 @@ struct UsageStatsDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: systemImage)
                 .font(.subheadline.bold())
+                .foregroundStyle(SettingsChrome.primaryText)
             if items.isEmpty {
                 Text("No data")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(SettingsChrome.secondaryText)
             } else {
                 VStack(spacing: 6) {
                     ForEach(items) { row in
                         HStack(spacing: 8) {
                             Text(row.name)
                                 .font(.caption)
+                                .foregroundStyle(SettingsChrome.primaryText)
                                 .lineLimit(1)
                                 .frame(width: 100, alignment: .leading)
                             GeometryReader { geo in
@@ -151,7 +155,7 @@ struct UsageStatsDashboardView: View {
                             .frame(height: 8)
                             Text("\(row.count)")
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(SettingsChrome.secondaryText)
                                 .frame(width: 32, alignment: .trailing)
                         }
                     }

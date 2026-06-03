@@ -74,15 +74,52 @@ struct ClipboardItemPreview: View {
             case .link:
                 LinkFaviconView(item: item, iconSize: largeIcons ? 72 : 36)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .richText, .markdown:
+                richTextPreview
             default:
-                Text(item.textContent ?? item.title ?? "")
-                    .font(.system(largeIcons ? .callout : .caption, design: item.contentType == .code ? .monospaced : .default))
-                    .lineLimit(largeIcons ? nil : 4)
-                    .multilineTextAlignment(.leading)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if let summary = item.resolvedText ?? item.title, !summary.isEmpty {
+                    Text(summary)
+                        .font(.system(largeIcons ? .callout : .caption, design: item.contentType == .code ? .monospaced : .default))
+                        .lineLimit(largeIcons ? nil : 4)
+                        .multilineTextAlignment(.leading)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    styledContentPlaceholder
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private var richTextPreview: some View {
+        if let attr = RichContentRenderer.attributedPreview(for: item), attr.length > 0 {
+            AttributedTextPreview(attributedString: attr)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            let summary = item.displaySummary
+            if summary != "Untitled", summary != "Rich text", summary != "Clipboard content" {
+            Text(summary)
+                .font(.system(largeIcons ? .callout : .caption))
+                .lineLimit(largeIcons ? nil : 4)
+                .multilineTextAlignment(.leading)
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                styledContentPlaceholder
+            }
+        }
+    }
+
+    private var styledContentPlaceholder: some View {
+        VStack(spacing: 6) {
+            Image(systemName: item.contentType.systemImage)
+                .font(.system(size: largeIcons ? 32 : 20))
+            Text(item.contentType == .richText ? "Rich text" : "Styled content")
+                .font(largeIcons ? .caption : .caption2)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var placeholder: some View {

@@ -13,39 +13,52 @@ struct CaptureSettingsTab: View {
     @State private var captureUniversalClipboard: Bool = Preferences.captureUniversalClipboard
 
     var body: some View {
-        Form {
-            Section("Capture") {
-                Toggle("Pause capture", isOn: Binding(
-                    get: { monitor.isPaused },
-                    set: { monitor.setPaused($0) }
-                ))
+        SettingsScrollContent {
+            SettingsCard(title: "Capture", systemImage: "doc.on.clipboard") {
+                SettingsToggleRow(
+                    title: "Pause capture",
+                    isOn: Binding(
+                        get: { monitor.isPaused },
+                        set: { monitor.setPaused($0) }
+                    )
+                )
             }
 
-            Section {
+            SettingsCard(
+                title: "Excluded apps",
+                systemImage: "app.badge.checkmark",
+                footer: "Copies made while one of these apps is frontmost are ignored. A few sensitive apps are excluded by default; add more from Recommended."
+            ) {
                 ExcludedAppsSettingsView()
-            } header: {
-                Text("Excluded apps")
-            } footer: {
-                Text("Copies made while one of these apps is frontmost are ignored. Password managers and banking apps are added automatically on first launch.")
             }
 
-            Section {
+            SettingsCard(
+                title: "Content types",
+                systemImage: "square.grid.2x2",
+                footer: "Turn off a group to stop capturing all of its types. With a group on, disable individual types you do not want saved."
+            ) {
                 CaptureContentTypeSettings(
                     enabledGroups: $enabledCaptureGroups,
                     capturedTypes: $capturedTypes
                 )
-            } header: {
-                Text("Content Types")
-            } footer: {
-                Text("Turn off a group to stop capturing all of its types. With a group on, disable individual types you do not want saved.")
             }
 
-            Section("Sensitive Content") {
-                Toggle("Detect sensitive content", isOn: $sensitiveEnabled)
-                    .onChange(of: sensitiveEnabled) { _, v in
-                        Preferences.sensitiveDetectionEnabled = v
-                    }
-                Picker("When detected", selection: $sensitiveBehavior) {
+            SettingsCard(title: "Sensitive content", systemImage: "lock.shield") {
+                SettingsToggleRow(
+                    title: "Detect sensitive content",
+                    isOn: $sensitiveEnabled
+                )
+                .onChange(of: sensitiveEnabled) { _, v in
+                    Preferences.sensitiveDetectionEnabled = v
+                }
+
+                SettingsInsetDivider()
+
+                SettingsPickerRow(
+                    title: "When detected",
+                    disabled: !sensitiveEnabled,
+                    selection: $sensitiveBehavior
+                ) {
                     ForEach(SensitiveBehavior.allCases) { b in
                         Text(b.displayName).tag(b)
                     }
@@ -53,43 +66,52 @@ struct CaptureSettingsTab: View {
                 .onChange(of: sensitiveBehavior) { _, v in
                     Preferences.sensitiveBehavior = v
                 }
-                .disabled(!sensitiveEnabled)
+
                 if sensitiveEnabled, sensitiveBehavior == .saveHidden {
-                    Text("Saved clips stay blurred in the library, Quick Search, and menu bar until you tap Reveal.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsCaption("Saved clips stay blurred in the library, Quick Search, and menu bar until you tap Reveal.")
+                        .padding(.top, 4)
                 }
             }
 
-            Section("Organization") {
-                Toggle("Suggest categories", isOn: $autoCategorize)
+            SettingsCard(title: "Organization", systemImage: "folder") {
+                SettingsToggleRow(title: "Suggest categories", isOn: $autoCategorize)
                     .onChange(of: autoCategorize) { _, v in Preferences.autoCategorizationEnabled = v }
-                Toggle("Use on-device language analysis", isOn: $autoCategorizeML)
-                    .onChange(of: autoCategorizeML) { _, v in Preferences.autoCategorizationML = v }
-                    .disabled(!autoCategorize)
-                Toggle("Collapse near-duplicate clips", isOn: $collapseDuplicates)
+                SettingsInsetDivider()
+                SettingsToggleRow(
+                    title: "Use on-device language analysis",
+                    isOn: $autoCategorizeML
+                )
+                .disabled(!autoCategorize)
+                .onChange(of: autoCategorizeML) { _, v in Preferences.autoCategorizationML = v }
+                SettingsInsetDivider()
+                SettingsToggleRow(title: "Collapse near-duplicate clips", isOn: $collapseDuplicates)
                     .onChange(of: collapseDuplicates) { _, v in Preferences.collapseDuplicates = v }
             }
 
-            Section("Universal Clipboard") {
-                Toggle("Save copies from iPhone and iPad", isOn: $captureUniversalClipboard)
-                    .onChange(of: captureUniversalClipboard) { _, v in
-                        Preferences.captureUniversalClipboard = v
-                    }
-                Text("Detects Handoff via com.apple.is-remote-clipboard and tags clips as iPhone, iPad, or iPhone/iPad.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            SettingsCard(
+                title: "Universal Clipboard",
+                systemImage: "iphone.and.arrow.forward",
+                footer: "Detects Handoff via com.apple.is-remote-clipboard and tags clips as iPhone, iPad, or iPhone/iPad."
+            ) {
+                SettingsToggleRow(
+                    title: "Save copies from iPhone and iPad",
+                    isOn: $captureUniversalClipboard
+                )
+                .onChange(of: captureUniversalClipboard) { _, v in
+                    Preferences.captureUniversalClipboard = v
+                }
             }
 
-            Section("Links") {
-                Toggle("Fetch link previews", isOn: $linkPreviewsEnabled)
+            SettingsCard(
+                title: "Links",
+                systemImage: "link",
+                footer: "Only network request the app makes."
+            ) {
+                SettingsToggleRow(title: "Fetch link previews", isOn: $linkPreviewsEnabled)
                     .onChange(of: linkPreviewsEnabled) { _, v in
                         Preferences.linkPreviewsEnabled = v
                     }
-                Text("Only network request the app makes.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
     }
 }

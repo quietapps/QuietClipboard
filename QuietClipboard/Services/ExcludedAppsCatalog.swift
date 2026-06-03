@@ -29,8 +29,18 @@ enum ExcludedAppsCatalog {
         Entry(bundleID: "com.apple.ScreenSharing", name: "Screen Sharing"),
     ]
 
+    /// Seeded once on first launch — small set; user adds more via Recommended or Add app.
+    static let defaultOnFirstLaunch: [Entry] = [
+        Entry(bundleID: "com.1password.1password", name: "1Password"),
+        Entry(bundleID: "com.apple.keychainaccess", name: "Keychain Access"),
+    ]
+
     static var recommendedBundleIDs: Set<String> {
         Set(recommended.map(\.bundleID))
+    }
+
+    static var defaultExcludedBundleIDs: Set<String> {
+        Set(defaultOnFirstLaunch.map(\.bundleID))
     }
 
     static func displayName(for bundleID: String) -> String {
@@ -52,7 +62,7 @@ enum ExcludedAppsCatalog {
     static func seedDefaultsIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: "QC.ExcludedAppsSeeded") else { return }
         var ids = Preferences.excludedBundleIDs
-        ids.formUnion(recommendedBundleIDs)
+        ids.formUnion(defaultExcludedBundleIDs)
         Preferences.excludedBundleIDs = ids
         UserDefaults.standard.set(true, forKey: "QC.ExcludedAppsSeeded")
     }

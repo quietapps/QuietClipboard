@@ -5,29 +5,31 @@ import Carbon.HIToolbox
 struct ShortcutRecorderView: View {
     @Binding var combo: KeyCombo?
     @State private var recording = false
+    @Environment(\.settingsDarkChrome) private var darkChrome
 
     var body: some View {
         Button(action: { recording.toggle() }) {
             HStack {
                 if recording {
                     Text("Press shortcut…")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(darkChrome ? SettingsChrome.secondaryText : .secondary)
                         .italic()
                 } else if let combo {
                     Text(combo.displayString)
                         .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(darkChrome ? SettingsChrome.primaryText : .primary)
                 } else {
-                    Text("Not set").foregroundStyle(.secondary)
+                    Text("Not set")
+                        .foregroundStyle(darkChrome ? SettingsChrome.secondaryText : .secondary)
                 }
             }
             .frame(minWidth: 120)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(recording ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(cornerRadius: 6))
+            .background(chipBackground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(recording ? Color.accentColor : Color.secondary.opacity(0.3))
+                    .stroke(chipStroke, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -37,6 +39,18 @@ struct ShortcutRecorderView: View {
                 self.recording = false
             }
         )
+    }
+
+    private var chipBackground: Color {
+        if recording {
+            return Color.accentColor.opacity(0.25)
+        }
+        return darkChrome ? SettingsChrome.controlFill : Color(nsColor: .controlBackgroundColor)
+    }
+
+    private var chipStroke: Color {
+        if recording { return Color.accentColor }
+        return darkChrome ? SettingsChrome.cardStroke : Color.secondary.opacity(0.3)
     }
 }
 

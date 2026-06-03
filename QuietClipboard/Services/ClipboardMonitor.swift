@@ -325,28 +325,78 @@ final class ClipboardMonitor: ObservableObject {
                            thumbnail: nil, fileSize: size, mime: nil)
 
         case .richText:
+            if let rtfd = snap.rtfd {
+                let capped = rtfd.count > maxRawBytes ? rtfd.prefix(maxRawBytes) : rtfd[...]
+                let plain = plainText(from: snap)
+                return Payload(content: Data(capped), text: plain,
+                               thumbnail: nil, fileSize: nil, mime: "application/rtfd")
+            }
             if let rtf = snap.rtf {
                 let capped = rtf.count > maxRawBytes ? rtf.prefix(maxRawBytes) : rtf[...]
-                return Payload(content: Data(capped), text: snap.string,
+                let plain = plainText(from: snap)
+                return Payload(content: Data(capped), text: plain,
                                thumbnail: nil, fileSize: nil, mime: "text/rtf")
             }
             if let html = snap.html, let htmlData = html.data(using: .utf8) {
                 let capped = htmlData.count > maxRawBytes ? htmlData.prefix(maxRawBytes) : htmlData[...]
-                return Payload(content: Data(capped), text: snap.string,
+                let plain = plainText(from: snap)
+                return Payload(content: Data(capped), text: plain,
                                thumbnail: nil, fileSize: nil, mime: "text/html")
             }
-            if let s = snap.string {
-                return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: nil)
+            if let archive = snap.archiveData {
+                return Payload(content: archive, text: plainText(from: snap),
+                               thumbnail: nil, fileSize: nil, mime: PasteboardHelper.archiveMIME)
+            }
+            if let s = snap.string?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                return Payload(content: Data(s.utf8), text: s, thumbnail: nil, fileSize: nil, mime: "text/plain")
             }
             return nil
 
-        case .text, .markdown, .code, .link, .color, .svg, .other:
-            guard let s = snap.string else { return nil }
-            // Cap very large text to avoid blocking
-            let text = s.count > 500_000 ? String(s.prefix(500_000)) : s
-            return Payload(content: Data(text.utf8), text: text,
-                           thumbnail: nil, fileSize: nil, mime: "text/plain")
+        case .text, .markdown, .code, .link, .color, .svg:
+            if let s = snap.string?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                let text = s.count > 500_000 ? String(s.prefix(500_000)) : s
+                return Payload(content: Data(text.utf8), text: text,
+                               thumbnail: nil, fileSize: nil, mime: "text/plain")
+            }
+            return richFallbackPayload(from: snap)
+
+        case .other:
+            if let archive = snap.archiveData {
+                return Payload(content: archive, text: plainText(from: snap),
+                               thumbnail: nil, fileSize: nil, mime: PasteboardHelper.archiveMIME)
+            }
+            return richFallbackPayload(from: snap)
         }
+    }
+
+    nonisolated private static func plainText(from snap: PasteboardSnapshot) -> String? {
+        guard let s = snap.string?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
+            return nil
+        }
+        return s.count > 500_000 ? String(s.prefix(500_000)) : s
+    }
+
+    nonisolated private static func richFallbackPayload(from snap: PasteboardSnapshot) -> Payload? {
+        if let rtfd = snap.rtfd {
+            let capped = rtfd.count > maxRawBytes ? rtfd.prefix(maxRawBytes) : rtfd[...]
+            return Payload(content: Data(capped), text: plainText(from: snap),
+                           thumbnail: nil, fileSize: nil, mime: "application/rtfd")
+        }
+        if let rtf = snap.rtf {
+            let capped = rtf.count > maxRawBytes ? rtf.prefix(maxRawBytes) : rtf[...]
+            return Payload(content: Data(capped), text: plainText(from: snap),
+                           thumbnail: nil, fileSize: nil, mime: "text/rtf")
+        }
+        if let html = snap.html, let htmlData = html.data(using: .utf8) {
+            let capped = htmlData.count > maxRawBytes ? htmlData.prefix(maxRawBytes) : htmlData[...]
+            return Payload(content: Data(capped), text: plainText(from: snap),
+                           thumbnail: nil, fileSize: nil, mime: "text/html")
+        }
+        if let archive = snap.archiveData {
+            return Payload(content: archive, text: plainText(from: snap),
+                           thumbnail: nil, fileSize: nil, mime: PasteboardHelper.archiveMIME)
+        }
+        return nil
     }
 
     nonisolated private static func hash(_ d: Data) -> String {
