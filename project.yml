@@ -35,6 +35,7 @@ targets:
           - "Info.plist"
     settings:
       base:
+        PRODUCT_NAME: "Quiet Clipboard"
         PRODUCT_BUNDLE_IDENTIFIER: app.quiet.QuietClipboard
         INFOPLIST_FILE: QuietClipboard/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
