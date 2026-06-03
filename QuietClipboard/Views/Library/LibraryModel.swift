@@ -4,6 +4,7 @@ import SwiftUI
 enum LibrarySelection: Hashable {
     case history
     case favorites
+    case pinned
     case screenshots
     case timeline
     case category(UUID)

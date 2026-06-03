@@ -108,8 +108,11 @@ struct ItemDetailView: View {
             .pointerCursor()
             CategoryAssignmentMenu(item: item)
                 .pointerCursor()
+            PinnedSlotAssignmentMenu(item: item)
+                .pointerCursor()
             exportMenu
             Button(role: .destructive) {
+                coordinator.pinned.unpin(itemID: item.id)
                 context.delete(item)
                 try? context.save()
             } label: {

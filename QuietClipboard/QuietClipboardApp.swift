@@ -26,6 +26,7 @@ struct QuietClipboardApp: App {
             MenuBarPopover()
                 .background {
                     WindowHandlerInstaller(coordinator: coordinator)
+                    OpenSettingsCapture(coordinator: coordinator)
                 }
                 .environmentObject(coordinator)
                 .environmentObject(coordinator.monitor)
@@ -124,7 +125,7 @@ struct AppSettingsView: View {
                 .environmentObject(coordinator)
                 .tabItem { Label("Storage", systemImage: "internaldrive") }
         }
-        .frame(width: 620, height: 580)
+        .frame(width: 620, height: 720)
     }
 
     private var generalTab: some View {

@@ -4,6 +4,7 @@ struct CaptureSettingsTab: View {
     @EnvironmentObject var monitor: ClipboardMonitor
     @State private var sensitiveEnabled: Bool = Preferences.sensitiveDetectionEnabled
     @State private var sensitiveBehavior: SensitiveBehavior = Preferences.sensitiveBehavior
+    @State private var enabledCaptureGroups: Set<CaptureContentGroup> = Preferences.enabledCaptureGroups
     @State private var capturedTypes: Set<ClipboardContentType> = Preferences.capturedTypes
     @State private var linkPreviewsEnabled: Bool = Preferences.linkPreviewsEnabled
     @State private var autoCategorize: Bool = Preferences.autoCategorizationEnabled
@@ -20,18 +21,15 @@ struct CaptureSettingsTab: View {
                 ))
             }
 
-            Section("Content Types") {
-                ForEach(ClipboardContentType.allCases) { t in
-                    Toggle(isOn: Binding(
-                        get: { capturedTypes.contains(t) },
-                        set: { on in
-                            if on { capturedTypes.insert(t) } else { capturedTypes.remove(t) }
-                            Preferences.capturedTypes = capturedTypes
-                        }
-                    )) {
-                        Label(t.displayName, systemImage: t.systemImage)
-                    }
-                }
+            Section {
+                CaptureContentTypeSettings(
+                    enabledGroups: $enabledCaptureGroups,
+                    capturedTypes: $capturedTypes
+                )
+            } header: {
+                Text("Content Types")
+            } footer: {
+                Text("Turn off a group to stop capturing all of its types. With a group on, disable individual types you do not want saved.")
             }
 
             Section("Sensitive Content") {

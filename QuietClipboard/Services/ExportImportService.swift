@@ -43,6 +43,8 @@ struct ExportPayload: Codable {
     var exportedAt: Date
     var items: [ExportedItem]
     var categories: [ExportedCategory]
+    /// Slot index (0–9) → item UUID string.
+    var pinnedSlots: [String: String]?
 }
 
 @MainActor
@@ -92,8 +94,12 @@ enum ExportImportService {
             )
         }
 
+        let pinnedRaw = PinnedClipStore.shared.slotItemIDs.reduce(into: [String: String]()) {
+            $0[String($1.key)] = $1.value.uuidString
+        }
         let payload = ExportPayload(version: 1, exportedAt: .now,
-                                    items: exportedItems, categories: exportedCats)
+                                    items: exportedItems, categories: exportedCats,
+                                    pinnedSlots: pinnedRaw.isEmpty ? nil : pinnedRaw)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -168,6 +174,20 @@ enum ExportImportService {
                     item.categories.append(cat)
                 }
             }
+        }
+
+        if let pinned = payload.pinnedSlots {
+            var map: [Int: UUID] = [:]
+            for (k, v) in pinned {
+                guard let slot = Int(k), let id = UUID(uuidString: v) else { continue }
+                map[slot] = id
+            }
+            for slot in 0..<PinnedClipStore.slotCount {
+                if let id = map[slot] {
+                    PinnedClipStore.shared.pin(itemID: id, to: slot)
+                }
+            }
+            PinnedClipStore.shared.pruneMissingItems(context: context)
         }
 
         try context.save()

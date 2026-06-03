@@ -50,11 +50,12 @@ struct ClipboardItemGrid: View {
         ClipboardItemCard(
             item: item,
             isSelected: item.id == selectedID,
-            isCopyHistoryExpanded: expandedCopyHistories.contains(item.id),
-            onToggleCopyHistory: item.effectiveCopyCount > 1
-                ? { toggleCopyHistory(for: item.id) }
-                : nil
+            layout: .gridTile,
+            isCopyHistoryExpanded: false,
+            onToggleCopyHistory: nil
         )
+        .frame(maxWidth: .infinity)
+        .frame(height: LibraryGridMetrics.tileHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             if selectedID == item.id { onActivate(item) } else { selectedID = item.id }
@@ -66,21 +67,16 @@ struct ClipboardItemGrid: View {
 
     @ViewBuilder
     private func nearDuplicateExpander(groupKey: String, siblings: [ClipboardItem]) -> some View {
-        let isExpanded = expandedGroups.contains(groupKey)
-        Button {
-            if isExpanded { expandedGroups.remove(groupKey) } else { expandedGroups.insert(groupKey) }
-        } label: {
-            Label(
-                isExpanded ? "Hide \(siblings.count) similar" : "Show \(siblings.count) similar",
-                systemImage: isExpanded ? "chevron.up" : "chevron.down"
-            )
-            .font(.caption)
-        }
-        .buttonStyle(.link)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
+        NearDuplicateExpanderCard(
+            siblings: siblings,
+            groupKey: groupKey,
+            expandedGroups: $expandedGroups,
+            gridStyle: true
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: LibraryGridMetrics.tileHeight)
 
-        if isExpanded {
+        if expandedGroups.contains(groupKey) {
             ForEach(siblings) { sibling in
                 itemButton(sibling)
             }
@@ -155,15 +151,13 @@ struct ClipboardItemList: View {
     }
 
     private func nearDupListFooter(row: LibraryRow, siblings: [ClipboardItem]) -> some View {
-        Button {
-            if expandedGroups.contains(row.id) { expandedGroups.remove(row.id) }
-            else { expandedGroups.insert(row.id) }
-        } label: {
-            Text(expandedGroups.contains(row.id) ? "Hide similar" : "Show \(siblings.count) similar")
-                .font(.caption2)
-        }
-        .buttonStyle(.link)
-        .padding(.leading, 72)
+        NearDuplicateExpanderCard(
+            siblings: siblings,
+            groupKey: row.id,
+            expandedGroups: $expandedGroups,
+            gridStyle: false
+        )
+        .padding(.leading, 8)
     }
 
     private func toggleCopyHistory(for id: UUID) {
@@ -202,6 +196,8 @@ struct ItemContextMenu: View {
                   systemImage: item.isFavorite ? "star.slash" : "star")
         }
 
+        PinnedSlotAssignmentMenu(item: item)
+
         CategoryAssignmentMenu(item: item)
 
         if !isRedacted, RichContentRenderer.canExportMarkdown(item) {
@@ -218,6 +214,7 @@ struct ItemContextMenu: View {
         Divider()
 
         Button(role: .destructive) {
+            coordinator.pinned.unpin(itemID: item.id)
             context.delete(item)
             try? context.save()
         } label: { Label("Delete", systemImage: "trash") }

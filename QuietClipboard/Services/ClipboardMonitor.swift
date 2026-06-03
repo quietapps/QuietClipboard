@@ -74,7 +74,7 @@ final class ClipboardMonitor: ObservableObject {
     private func ingest(snap: PasteboardSnapshot, bundleID: String?, appName: String?) async {
         let type = ContentTypeDetector.detect(snap)
 
-        if !Preferences.capturedTypes.contains(type) { return }
+        if !Preferences.isTypeCaptured(type) { return }
 
         guard let payload = makePayload(snap: snap, type: type) else { return }
 

@@ -77,6 +77,26 @@ enum Preferences {
         }
     }
 
+    /// Master switches for capture groups (Text, Media, Other). When off, no types in that group are captured.
+    @MainActor static var enabledCaptureGroups: Set<CaptureContentGroup> {
+        get {
+            if let raw = defaults.array(forKey: "QC.CaptureGroupsEnabled") as? [String] {
+                let groups = Set(raw.compactMap { CaptureContentGroup(rawValue: $0) })
+                return groups.isEmpty ? Set(CaptureContentGroup.allCases) : groups
+            }
+            return Set(CaptureContentGroup.allCases)
+        }
+        set {
+            defaults.set(newValue.map(\.rawValue), forKey: "QC.CaptureGroupsEnabled")
+        }
+    }
+
+    @MainActor static func isTypeCaptured(_ type: ClipboardContentType) -> Bool {
+        let group = type.captureGroup
+        guard enabledCaptureGroups.contains(group) else { return false }
+        return capturedTypes.contains(type)
+    }
+
     @MainActor static var excludedBundleIDs: Set<String> {
         get { Set((defaults.array(forKey: "QC.ExcludedApps") as? [String]) ?? []) }
         set { defaults.set(Array(newValue), forKey: "QC.ExcludedApps") }

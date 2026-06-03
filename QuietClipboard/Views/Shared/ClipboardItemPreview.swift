@@ -2,9 +2,11 @@ import SwiftUI
 
 struct ClipboardItemPreview: View {
     let item: ClipboardItem
+    /// Use compact redaction (lock only) for small preview areas such as popup grid cells.
+    var compactRedaction: Bool = false
 
     var body: some View {
-        SensitiveContentGate(item: item) {
+        SensitiveContentGate(item: item, compact: compactRedaction) {
             previewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -55,7 +57,8 @@ struct ClipboardItemPreview: View {
             default:
                 Text(item.textContent ?? item.title ?? "")
                     .font(.system(.caption, design: item.contentType == .code ? .monospaced : .default))
-                    .lineLimit(6)
+                    .lineLimit(4)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
                     .padding(6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

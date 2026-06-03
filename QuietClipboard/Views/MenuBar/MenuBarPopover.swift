@@ -5,7 +5,6 @@ import AppKit
 struct MenuBarPopover: View {
     @Environment(\.modelContext) private var context
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @EnvironmentObject var coordinator: AppCoordinator
     @EnvironmentObject var monitor: ClipboardMonitor
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
@@ -17,9 +16,9 @@ struct MenuBarPopover: View {
         let base = items.sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
         let limited = Array(base.prefix(150))
         guard !trimmed.isEmpty else { return Array(limited.prefix(15)) }
-        return limited.filter { ClipSearchMatcher.matches($0, query: trimmed) }
-        .prefix(15)
-        .map { $0 }
+        return ClipSearchMatcher.ranked(limited, query: trimmed)
+            .prefix(15)
+            .map { $0 }
     }
 
     var body: some View {
@@ -33,6 +32,7 @@ struct MenuBarPopover: View {
                     items: filtered,
                     viewMode: popupViewMode,
                     onActivate: { copy($0) },
+                    onTogglePin: { togglePin($0) },
                     onDelete: { deleteItem($0) },
                     onToggleFavorite: { toggleFavorite($0) }
                 )
@@ -88,13 +88,12 @@ struct MenuBarPopover: View {
 
             Spacer()
 
-            Button {
-                openOrRaiseSettings()
-            } label: {
+            AppSettingsLink {
                 Image(systemName: "gearshape")
             }
             .buttonStyle(.borderless)
             .pointerCursor()
+            .help("Settings")
 
             Button {
                 NSApp.terminate(nil)
@@ -113,6 +112,7 @@ struct MenuBarPopover: View {
     }
 
     private func deleteItem(_ item: ClipboardItem) {
+        coordinator.pinned.unpin(itemID: item.id)
         context.delete(item)
         try? context.save()
     }
@@ -123,7 +123,8 @@ struct MenuBarPopover: View {
         try? context.save()
     }
 
-    private func openOrRaiseSettings() {
-        SettingsWindowOpener.open(openSettings: openSettings)
+    private func togglePin(_ item: ClipboardItem) {
+        coordinator.pinned.togglePin(itemID: item.id)
     }
+
 }

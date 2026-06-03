@@ -27,7 +27,7 @@ struct CopyHistoryAccessory: View {
                     }
                 }
             }
-            .frame(maxWidth: 160, alignment: .trailing)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

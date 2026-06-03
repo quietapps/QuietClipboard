@@ -21,6 +21,24 @@ struct SensitiveContentGate<Content: View>: View {
     }
 }
 
+/// Lock-only mask for small thumbnails in popup rows (reveal via row tap).
+struct SensitiveThumbnailMask: View {
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+            Image(systemName: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Sensitive content hidden")
+        .accessibilityHint("Select the clip to reveal")
+    }
+}
+
 struct SensitiveRedactedPanel: View {
     let onReveal: () -> Void
     var compact: Bool = false
@@ -32,24 +50,32 @@ struct SensitiveRedactedPanel: View {
             if !compact {
                 decorativeBars
             }
-            VStack(spacing: compact ? 4 : 8) {
+            if compact {
                 Image(systemName: "lock.fill")
-                    .font(compact ? .caption : .title3)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                if !compact {
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                     Text("Sensitive content hidden")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Button("Reveal", action: onReveal)
+                        .buttonStyle(.borderedProminent)
                 }
-                Button("Reveal", action: onReveal)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(compact ? .small : .regular)
+                .padding(12)
             }
-            .padding(compact ? 6 : 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if compact { onReveal() }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Sensitive content hidden")
-        .accessibilityHint("Double tap to reveal")
+        .accessibilityHint(compact ? "Tap to reveal" : "Double tap to reveal")
         .accessibilityAddTraits(.isButton)
     }
 

@@ -3,9 +3,12 @@ import SwiftUI
 /// Compact grid cell for Quick Search and menu bar popover.
 struct PopupClipCard: View {
     @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
+    var layout: PopupCardLayout = .flexible
     let onActivate: () -> Void
+    let onTogglePin: () -> Void
     let onToggleFavorite: () -> Void
     let onDelete: () -> Void
 
@@ -17,12 +20,20 @@ struct PopupClipCard: View {
 
     var body: some View {
         Group {
-            if clipPreviewStyle == .compact {
-                compactBody
-            } else {
-                richBody
+            switch layout {
+            case .gridTile:
+                gridTileBody
+            case .flexible:
+                if clipPreviewStyle == .compact {
+                    compactBody
+                } else {
+                    flexibleRichBody
+                }
             }
         }
+        .frame(height: layout == .gridTile ? LibraryGridMetrics.tileHeight : nil)
+        .frame(maxWidth: layout == .gridTile ? .infinity : nil)
+        .clipped()
         .background(cardBackground)
         .overlay(cardStroke)
         .contentShape(Rectangle())
@@ -34,9 +45,75 @@ struct PopupClipCard: View {
         .pointerCursor()
     }
 
-    private var richBody: some View {
+    private var gridTileBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topTrailing) {
+                ClipboardItemPreview(item: item, compactRedaction: true)
+                    .frame(height: LibraryGridMetrics.previewHeight)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+
+                HStack(spacing: 4) {
+                    if pinned.isPinned(item.id) {
+                        badgeIcon("pin.fill", color: .orange)
+                    }
+                    if item.isSensitive, !coordinator.isSensitiveRevealed(item.id) {
+                        badgeIcon("lock.fill", color: .secondary)
+                    }
+                    if item.isFavorite {
+                        badgeIcon("star.fill", color: .yellow)
+                    }
+                    Image(systemName: item.contentType.systemImage)
+                        .font(.caption2)
+                        .padding(4)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .padding(6)
+            }
+
+            gridTileFooter
+                .frame(height: LibraryGridMetrics.footerHeight, alignment: .top)
+        }
+        .frame(maxHeight: LibraryGridMetrics.tileHeight, alignment: .top)
+    }
+
+    private func badgeIcon(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(.caption2)
+            .foregroundStyle(color)
+            .padding(4)
+            .background(.thinMaterial, in: Circle())
+    }
+
+    private var gridTileFooter: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SensitiveClipLabel(item: item, font: .caption, lineLimit: 2, monospaced: item.contentType == .code)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 4) {
+                ClipSourceIcon(item: item, size: 10)
+                Text(item.sourceAppName ?? "Unknown")
+                    .font(.caption2)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .foregroundStyle(.secondary)
+
+            actionRow
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var flexibleRichBody: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ClipboardItemPreview(item: item)
+            ClipboardItemPreview(item: item, compactRedaction: true)
                 .frame(height: 72)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
@@ -72,6 +149,7 @@ struct PopupClipCard: View {
     private var actionRow: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
+            pinButton
             favoriteButton
             deleteButton
         }
@@ -85,6 +163,26 @@ struct PopupClipCard: View {
     private var cardStroke: some View {
         RoundedRectangle(cornerRadius: 8)
             .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.15), lineWidth: 0.5)
+    }
+
+    private var pinButton: some View {
+        Button(action: onTogglePin) {
+            Image(systemName: pinned.isPinned(item.id) ? "pin.fill" : "pin")
+                .font(.caption)
+                .foregroundStyle(pinned.isPinned(item.id) ? .orange : .secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .pointerCursor()
+        .help(pinHelp)
+    }
+
+    private var pinHelp: String {
+        if let slot = pinned.slotIndex(for: item.id) {
+            return "Unpin from slot \(slot + 1) (⌥P)"
+        }
+        return "Pin to slot (⌥P)"
     }
 
     private var favoriteButton: some View {
@@ -112,4 +210,9 @@ struct PopupClipCard: View {
         .pointerCursor()
         .help("Delete from history")
     }
+}
+
+enum PopupCardLayout {
+    case flexible
+    case gridTile
 }

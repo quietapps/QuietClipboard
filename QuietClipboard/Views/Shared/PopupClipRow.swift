@@ -3,9 +3,11 @@ import SwiftUI
 /// List row for Quick Search and menu bar popover: activate on main area, delete on the right.
 struct PopupClipRow: View {
     @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
     let onActivate: () -> Void
+    let onTogglePin: () -> Void
     let onToggleFavorite: () -> Void
     let onDelete: () -> Void
 
@@ -56,6 +58,17 @@ struct PopupClipRow: View {
             .buttonStyle(.plain)
             .pointerCursor()
 
+            Button(action: onTogglePin) {
+                Image(systemName: pinned.isPinned(item.id) ? "pin.fill" : "pin")
+                    .font(.body)
+                    .foregroundStyle(pinned.isPinned(item.id) ? .orange : .secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .pointerCursor()
+            .help(pinHelp)
+
             Button(action: onToggleFavorite) {
                 Image(systemName: item.isFavorite ? "star.fill" : "star")
                     .font(.body)
@@ -85,5 +98,12 @@ struct PopupClipRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
         )
+    }
+
+    private var pinHelp: String {
+        if let slot = pinned.slotIndex(for: item.id) {
+            return "Unpin from slot \(slot + 1) (⌥P)"
+        }
+        return "Pin to slot (⌥P)"
     }
 }

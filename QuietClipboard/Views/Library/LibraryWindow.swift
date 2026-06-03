@@ -18,6 +18,9 @@ struct LibraryWindow: View {
             break
         case .favorites:
             items = items.filter(\.isFavorite)
+        case .pinned:
+            let ordered = coordinator.pinned.orderedItemIDs()
+            items = ordered.compactMap { id in allItems.first(where: { $0.id == id }) }
         case .screenshots:
             items = items.filter { $0.contentType == .image || $0.contentType == .screenshot }
         case .category(let id):
@@ -28,9 +31,9 @@ struct LibraryWindow: View {
             items = items.filter { $0.contentType == t }
         }
 
-        let q = state.search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let q = state.search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
-            items = items.filter { ClipSearchMatcher.matches($0, query: q) }
+            return ClipSearchMatcher.ranked(items, query: q)
         }
 
         switch state.sort {
@@ -179,9 +182,7 @@ struct LibraryWindow: View {
             .frame(width: state.view == .timeline ? 120 : 100)
             .labelsHidden()
 
-            Button {
-                SettingsWindowOpener.open()
-            } label: {
+            AppSettingsLink {
                 Image(systemName: "gearshape")
             }
             .buttonStyle(.borderless)

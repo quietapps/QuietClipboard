@@ -3,6 +3,7 @@ import Foundation
 /// Filter chips available in the Quick Search popup bar.
 enum QuickSearchPopupFilter: String, CaseIterable, Identifiable, Codable {
     case favorites
+    case pinned
     case text
     case image
     case link
@@ -16,6 +17,7 @@ enum QuickSearchPopupFilter: String, CaseIterable, Identifiable, Codable {
     var displayName: String {
         switch self {
         case .favorites: return "Favorites"
+        case .pinned: return "Pinned"
         case .text: return "Text"
         case .image: return "Image"
         case .link: return "Link"
@@ -29,6 +31,7 @@ enum QuickSearchPopupFilter: String, CaseIterable, Identifiable, Codable {
     var systemImage: String {
         switch self {
         case .favorites: return "star.fill"
+        case .pinned: return "pin.fill"
         case .text: return ClipboardContentType.text.systemImage
         case .image: return ClipboardContentType.image.systemImage
         case .link: return ClipboardContentType.link.systemImage
@@ -41,7 +44,7 @@ enum QuickSearchPopupFilter: String, CaseIterable, Identifiable, Codable {
 
     var contentType: ClipboardContentType? {
         switch self {
-        case .favorites: return nil
+        case .favorites, .pinned: return nil
         case .text: return .text
         case .image: return .image
         case .link: return .link

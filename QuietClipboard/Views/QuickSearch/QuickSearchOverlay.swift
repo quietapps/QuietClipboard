@@ -12,6 +12,7 @@ struct QuickSearchOverlay: View {
     @State private var search: String = ""
     @State private var typeFilter: ClipboardContentType? = nil
     @State private var favoritesOnly: Bool = false
+    @State private var pinnedOnly: Bool = false
     @State private var categoryFilter: UUID? = nil
     @State private var selectedIndex: Int = 0
     @State private var keyboardTick: Int = 0
@@ -20,6 +21,8 @@ struct QuickSearchOverlay: View {
     @State private var previewEnabled: Bool = Preferences.quickSearchPreviewEnabled
     @State private var popupViewMode: PopupViewMode = .list
     @FocusState private var searchFocused: Bool
+    @State private var displayItems: [ClipboardItem] = []
+    @State private var filterTask: Task<Void, Never>?
 
     var onPaste: (ClipboardItem) -> Void
     var onDismiss: () -> Void
@@ -27,25 +30,8 @@ struct QuickSearchOverlay: View {
     var onTogglePause: () -> Void
     var onQuit: () -> Void
 
-    var filtered: [ClipboardItem] {
-        let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        var items = allItems
-        if let t = typeFilter { items = items.filter { $0.contentType == t } }
-        if favoritesOnly { items = items.filter { $0.isFavorite } }
-        if let cid = categoryFilter {
-            items = items.filter { $0.categories.contains { $0.id == cid } }
-        }
-        if !q.isEmpty {
-            items = items.filter { ClipSearchMatcher.matches($0, query: q) }
-        }
-        return items
-            .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
-            .prefix(50)
-            .map { $0 }
-    }
-
     private var previewItem: ClipboardItem? {
-        filtered.indices.contains(selectedIndex) ? filtered[selectedIndex] : nil
+        displayItems.indices.contains(selectedIndex) ? displayItems[selectedIndex] : nil
     }
 
     var body: some View {
@@ -60,6 +46,21 @@ struct QuickSearchOverlay: View {
                             .frame(width: clampedPreviewWidth(geo.size.width))
                     }
                 }
+            }
+            if pinnedOnly {
+                Divider()
+                PinnedSlotsPanel(
+                    items: allItems,
+                    selectedItemID: previewItem?.id,
+                    onActivate: { item in
+                        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+                        onPaste(item)
+                    },
+                    onAssignSelectionToSlot: { slot in
+                        guard let item = previewItem else { return }
+                        coordinator.pinned.pin(itemID: item.id, to: slot)
+                    }
+                )
             }
             Divider()
             bottomBar
@@ -78,12 +79,23 @@ struct QuickSearchOverlay: View {
             previewWidth = Preferences.quickSearchPreviewWidth
             popupViewMode = Preferences.popupViewMode
             sanitizeActiveFilters()
+            refreshDisplayItems()
         }
         .onChange(of: popupViewMode) { _, new in
             Preferences.popupViewMode = new
         }
+        .onChange(of: search) { _, _ in
+            selectedIndex = 0
+            scheduleFilterRefresh()
+        }
+        .onChange(of: typeFilter) { _, _ in scheduleFilterRefresh() }
+        .onChange(of: favoritesOnly) { _, _ in scheduleFilterRefresh() }
+        .onChange(of: pinnedOnly) { _, _ in scheduleFilterRefresh() }
+        .onChange(of: categoryFilter) { _, _ in scheduleFilterRefresh() }
+        .onChange(of: allItems.count) { _, _ in scheduleFilterRefresh() }
         .onReceive(coordinator.objectWillChange) { _ in
             sanitizeActiveFilters()
+            scheduleFilterRefresh()
         }
         .task {
             try? await Task.sleep(nanoseconds: 60_000_000)
@@ -98,10 +110,13 @@ struct QuickSearchOverlay: View {
                 keyboardTick &+= 1
             },
             onDown: {
-                selectedIndex = min(filtered.count - 1, selectedIndex + 1)
+                selectedIndex = min(displayItems.count - 1, selectedIndex + 1)
                 lastMouseLocation = NSEvent.mouseLocation
                 keyboardTick &+= 1
-            }
+            },
+            onFavorite: favoriteSelected,
+            onDelete: deleteSelected,
+            onPin: pinSelected
         ))
         .onExitCommand(perform: onDismiss)
     }
@@ -117,7 +132,6 @@ struct QuickSearchOverlay: View {
                     .font(.title3)
                     .focused($searchFocused)
                     .onSubmit { activate() }
-                    .onChange(of: search) { _, _ in selectedIndex = 0 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -126,21 +140,16 @@ struct QuickSearchOverlay: View {
             filterBar
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-            Divider()
-
-            if filtered.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "tray").font(.largeTitle).foregroundStyle(.secondary)
-                    Text("No results").foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if displayItems.isEmpty {
+                emptyResultsState
             } else {
                 PopupItemsView(
-                    items: filtered,
+                    items: displayItems,
                     viewMode: popupViewMode,
                     selectedIndex: selectedIndex,
                     keyboardTick: keyboardTick,
                     onActivate: { onPaste($0) },
+                    onTogglePin: { togglePin($0) },
                     onDelete: { deleteItem($0) },
                     onToggleFavorite: { toggleFavorite($0) },
                     onHoverIndex: { idx in
@@ -159,24 +168,44 @@ struct QuickSearchOverlay: View {
     private var filterBar: some View {
         let enabled = QuickSearchFilterPreferences.enabledFilters
         let showCategories = QuickSearchFilterPreferences.showUserCategories
-        return HorizontalScrollBar {
+        return HorizontalScrollBar(barHeight: 34, showsHorizontalScroller: true) {
             HStack(spacing: 6) {
                 FilterChip(label: "All", systemImage: "tray",
-                           isSelected: typeFilter == nil && !favoritesOnly && categoryFilter == nil) {
-                    typeFilter = nil; favoritesOnly = false; categoryFilter = nil
+                           isSelected: typeFilter == nil && !favoritesOnly && !pinnedOnly && categoryFilter == nil) {
+                    typeFilter = nil; favoritesOnly = false; pinnedOnly = false; categoryFilter = nil
                     selectedIndex = 0
                 }
+                FilterChip(label: "Pinned", systemImage: "pin.fill", iconOnly: true, isSelected: pinnedOnly) {
+                    pinnedOnly.toggle()
+                    if pinnedOnly {
+                        favoritesOnly = false
+                        typeFilter = nil
+                        categoryFilter = nil
+                    }
+                    selectedIndex = 0
+                    scheduleFilterRefresh()
+                }
                 if enabled.contains(.favorites) {
-                    FilterChip(label: "Favorites", systemImage: "star.fill", isSelected: favoritesOnly) {
+                    FilterChip(label: "Favorites", systemImage: "star.fill", iconOnly: true, isSelected: favoritesOnly) {
                         favoritesOnly.toggle()
+                        if favoritesOnly {
+                            pinnedOnly = false
+                            typeFilter = nil
+                            categoryFilter = nil
+                        }
                         selectedIndex = 0
+                        scheduleFilterRefresh()
                     }
                 }
-                ForEach(QuickSearchPopupFilter.allCases.filter { $0 != .favorites && enabled.contains($0) }) { filter in
+                ForEach(QuickSearchPopupFilter.allCases.filter {
+                    $0 != .favorites && $0 != .pinned && enabled.contains($0)
+                }) { filter in
                     if let t = filter.contentType {
                         FilterChip(label: filter.displayName, systemImage: filter.systemImage,
                                    isSelected: typeFilter == t) {
                             typeFilter = (typeFilter == t) ? nil : t
+                            favoritesOnly = false
+                            pinnedOnly = false
                             selectedIndex = 0
                         }
                     }
@@ -188,6 +217,8 @@ struct QuickSearchOverlay: View {
                         FilterChip(label: c.name, systemImage: c.icon,
                                    isSelected: categoryFilter == c.id) {
                             categoryFilter = (categoryFilter == c.id) ? nil : c.id
+                            favoritesOnly = false
+                            pinnedOnly = false
                             selectedIndex = 0
                         }
                     }
@@ -198,6 +229,7 @@ struct QuickSearchOverlay: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 34)
+        .clipped()
     }
 
     private func sanitizeActiveFilters() {
@@ -213,7 +245,62 @@ struct QuickSearchOverlay: View {
         if categoryFilter != nil, !QuickSearchFilterPreferences.showUserCategories {
             categoryFilter = nil
         }
-        selectedIndex = min(selectedIndex, max(0, filtered.count - 1))
+        selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
+    }
+
+    private var emptyResultsState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: pinnedOnly ? "pin.slash" : "tray")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            if pinnedOnly {
+                Text("No pinned slots")
+                    .font(.headline)
+                Text("Select a clip, then tap the pin icon or press ⌥P to assign a slot.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            } else {
+                Text("No results").foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func scheduleFilterRefresh() {
+        filterTask?.cancel()
+        let delay: UInt64 = search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 100_000_000
+        filterTask = Task { @MainActor in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            guard !Task.isCancelled else { return }
+            refreshDisplayItems()
+        }
+    }
+
+    private func refreshDisplayItems() {
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var items = allItems
+        if let t = typeFilter { items = items.filter { $0.contentType == t } }
+        if favoritesOnly { items = items.filter(\.isFavorite) }
+        if pinnedOnly {
+            let ordered = coordinator.pinned.orderedItemIDs()
+            items = ordered.compactMap { id in items.first(where: { $0.id == id }) }
+        }
+        if let cid = categoryFilter {
+            items = items.filter { $0.categories.contains { $0.id == cid } }
+        }
+        if !q.isEmpty {
+            displayItems = Array(ClipSearchMatcher.ranked(items, query: q).prefix(50))
+        } else {
+            displayItems = items
+                .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
+                .prefix(50)
+                .map { $0 }
+        }
+        selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
     }
 
     private func clampedPreviewWidth(_ total: CGFloat) -> CGFloat {
@@ -252,6 +339,9 @@ struct QuickSearchOverlay: View {
                 onDismiss()
             })
             Spacer()
+            Text("Pinned filter · ⌥P pin · ⌥F fav · ⌥D del")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             BottomBarButton(label: "Quit", systemImage: "power", action: onQuit)
         }
         .padding(.horizontal, 8)
@@ -259,20 +349,41 @@ struct QuickSearchOverlay: View {
     }
 
     private func activate() {
-        guard filtered.indices.contains(selectedIndex) else { return }
-        let item = filtered[selectedIndex]
+        guard displayItems.indices.contains(selectedIndex) else { return }
+        let item = displayItems[selectedIndex]
         guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
         onPaste(item)
     }
 
+    private func favoriteSelected() {
+        guard let item = previewItem else { return }
+        toggleFavorite(item)
+    }
+
+    private func deleteSelected() {
+        guard let item = previewItem else { return }
+        deleteItem(item)
+    }
+
+    private func pinSelected() {
+        guard let item = previewItem else { return }
+        togglePin(item)
+    }
+
+    private func togglePin(_ item: ClipboardItem) {
+        coordinator.pinned.togglePin(itemID: item.id)
+    }
+
     private func deleteItem(_ item: ClipboardItem) {
-        if let index = filtered.firstIndex(where: { $0.id == item.id }),
+        if let index = displayItems.firstIndex(where: { $0.id == item.id }),
            selectedIndex >= index, selectedIndex > 0 {
             selectedIndex -= 1
         }
+        coordinator.pinned.unpin(itemID: item.id)
         context.delete(item)
         try? context.save()
-        selectedIndex = min(selectedIndex, max(0, filtered.count - 1))
+        selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
+        scheduleFilterRefresh()
     }
 
     private func toggleFavorite(_ item: ClipboardItem) {
@@ -305,16 +416,20 @@ private struct BottomBarButton: View {
 private struct FilterChip: View {
     let label: String
     let systemImage: String
+    var iconOnly: Bool = false
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage).font(.caption)
-                Text(label).font(.caption)
+            HStack(spacing: iconOnly ? 0 : 4) {
+                Image(systemName: systemImage)
+                    .font(iconOnly ? .body : .caption)
+                if !iconOnly {
+                    Text(label).font(.caption)
+                }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, iconOnly ? 7 : 8)
             .padding(.vertical, 4)
             .background(isSelected ? Color.accentColor.opacity(0.25) : Color.clear,
                         in: Capsule())
@@ -322,6 +437,8 @@ private struct FilterChip: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
 
@@ -497,6 +614,9 @@ struct KeyHandler: NSViewRepresentable {
     var onEscape: () -> Void
     var onUp: () -> Void
     var onDown: () -> Void
+    var onFavorite: (() -> Void)?
+    var onDelete: (() -> Void)?
+    var onPin: (() -> Void)?
 
     func makeNSView(context: Context) -> KeyHandlerView {
         let v = KeyHandlerView()
@@ -504,6 +624,9 @@ struct KeyHandler: NSViewRepresentable {
         v.onEscape = onEscape
         v.onUp = onUp
         v.onDown = onDown
+        v.onFavorite = onFavorite
+        v.onDelete = onDelete
+        v.onPin = onPin
         return v
     }
 
@@ -512,6 +635,9 @@ struct KeyHandler: NSViewRepresentable {
         nsView.onEscape = onEscape
         nsView.onUp = onUp
         nsView.onDown = onDown
+        nsView.onFavorite = onFavorite
+        nsView.onDelete = onDelete
+        nsView.onPin = onPin
     }
 }
 
@@ -520,8 +646,16 @@ final class KeyHandlerView: NSView {
     var onEscape: (() -> Void)?
     var onUp: (() -> Void)?
     var onDown: (() -> Void)?
+    var onFavorite: (() -> Void)?
+    var onDelete: (() -> Void)?
+    var onPin: (() -> Void)?
 
     private var monitor: Any?
+
+    private static func isOptionOnly(_ event: NSEvent) -> Bool {
+        let mask: NSEvent.ModifierFlags = [.command, .option, .control, .shift, .function]
+        return event.modifierFlags.intersection(mask) == .option
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -529,6 +663,18 @@ final class KeyHandlerView: NSView {
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if Self.isOptionOnly(event) {
+                switch event.keyCode {
+                case 3: // F
+                    self.onFavorite?(); return nil
+                case 2: // D
+                    self.onDelete?(); return nil
+                case 35: // P
+                    self.onPin?(); return nil
+                default:
+                    break
+                }
+            }
             switch event.keyCode {
             case 36, 76: // return, keypad enter
                 self.onEnter?(); return nil

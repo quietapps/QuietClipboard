@@ -12,6 +12,8 @@ struct StorageSettingsTab: View {
     @State private var showClearAllConfirm = false
     @State private var showClearNonFavConfirm = false
     @State private var showAgeCleanupConfirm = false
+    @State private var usageStats: ClipboardUsageStats = .empty
+    @State private var usageStatsLoading = false
 
     private var manager: RetentionManager {
         RetentionManager(container: coordinator.container)
@@ -31,6 +33,14 @@ struct StorageSettingsTab: View {
                     counts: historyCounts,
                     onRefresh: refreshMetrics
                 )
+            }
+
+            Section {
+                UsageStatsDashboardView(stats: usageStats, isLoading: usageStatsLoading)
+            } header: {
+                Label("Usage", systemImage: "chart.bar.fill")
+            } footer: {
+                Text("Based on copy events from the last 14 days. All processing stays on your Mac.")
             }
 
             Section {
@@ -161,6 +171,16 @@ struct StorageSettingsTab: View {
         usage = RetentionManager.storageUsage()
         historyCounts = manager.historyCounts()
         refreshStaleCount()
+        refreshUsageStats()
+    }
+
+    private func refreshUsageStats() {
+        usageStatsLoading = true
+        let container = coordinator.container
+        Task { @MainActor in
+            usageStats = ClipboardUsageStatsService.compute(container: container)
+            usageStatsLoading = false
+        }
     }
 
     private func refreshStaleCount() {

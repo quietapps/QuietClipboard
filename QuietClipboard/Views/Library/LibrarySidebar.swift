@@ -4,6 +4,7 @@ import SwiftData
 struct LibrarySidebar: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject var state: LibraryState
+    @EnvironmentObject var coordinator: AppCoordinator
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
     @Query(sort: \Category.sortOrder) private var categories: [Category]
 
@@ -17,6 +18,8 @@ struct LibrarySidebar: View {
                     count: items.count)
                 row(.favorites, label: "Favorites", icon: "star.fill",
                     count: items.filter(\.isFavorite).count)
+                row(.pinned, label: "Pinned", icon: "pin.fill",
+                    count: coordinator.pinned.filledSlotCount())
                 row(.screenshots, label: "Screenshots", icon: "camera.viewfinder",
                     count: items.filter { $0.contentType == .screenshot || $0.contentType == .image }.count)
                 row(.timeline, label: "Timeline", icon: "clock",

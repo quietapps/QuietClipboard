@@ -11,9 +11,11 @@ final class AppCoordinator: ObservableObject {
     @Published var shortcutSettings: ShortcutSettings
     @Published var isPaused: Bool = false
     @Published private(set) var revealedSensitiveIDs: Set<UUID> = []
+    let pinned = PinnedClipStore.shared
 
     private var quickSearch: FloatingPanelController<AnyView>?
     private var openWindowHandler: ((String) -> Void)?
+    private(set) var openSettings: OpenSettingsAction?
     private var cancellables = Set<AnyCancellable>()
 
     init(container: ModelContainer) {
@@ -26,10 +28,18 @@ final class AppCoordinator: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] v in self?.isPaused = v }
             .store(in: &cancellables)
+        pinned.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     func setOpenWindowHandler(_ handler: @escaping (String) -> Void) {
         self.openWindowHandler = handler
+    }
+
+    func setOpenSettings(_ action: OpenSettingsAction) {
+        openSettings = action
     }
 
     func isSensitiveRevealed(_ itemID: UUID) -> Bool {
@@ -57,6 +67,7 @@ final class AppCoordinator: ObservableObject {
         guard !didBootstrap else { return }
         didBootstrap = true
         DataMigrationService.migrateIfNeeded(container: container)
+        pinned.pruneMissingItems(context: ModelContext(container))
         monitor.start()
         retention.start()
         ShortcutManager.shared.onAction = { [weak self] action in
@@ -76,6 +87,8 @@ final class AppCoordinator: ObservableObject {
         default:
             if let idx = action.pasteIndex {
                 pasteIndex(idx)
+            } else if let slot = action.pastePinnedSlot {
+                pastePinnedSlot(slot)
             }
         }
     }
@@ -128,7 +141,16 @@ final class AppCoordinator: ObservableObject {
         let items = ((try? context.fetch(FetchDescriptor<ClipboardItem>())) ?? [])
             .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
         guard index < items.count else { return }
-        let item = items[index]
+        pasteItem(items[index], context: context)
+    }
+
+    private func pastePinnedSlot(_ slot: Int) {
+        let context = ModelContext(container)
+        guard let item = pinned.resolveItem(slot: slot, context: context) else { return }
+        pasteItem(item, context: context)
+    }
+
+    private func pasteItem(_ item: ClipboardItem, context: ModelContext) {
         guard shouldProceedWithSensitiveAction(for: item) else { return }
         ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
         let prior = PasteSimulator.capturedFrontmost()

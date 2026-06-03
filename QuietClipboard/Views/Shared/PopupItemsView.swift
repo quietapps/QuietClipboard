@@ -6,6 +6,7 @@ struct PopupItemsView: View {
     var selectedIndex: Int?
     var keyboardTick: Int = 0
     let onActivate: (ClipboardItem) -> Void
+    let onTogglePin: (ClipboardItem) -> Void
     let onDelete: (ClipboardItem) -> Void
     let onToggleFavorite: (ClipboardItem) -> Void
     var onHoverIndex: ((Int) -> Void)?
@@ -13,10 +14,7 @@ struct PopupItemsView: View {
     @AppStorage("QC.ClipPreviewStyle") private var styleRaw: String = ClipPreviewStyle.rich.rawValue
 
     private var gridColumns: [GridItem] {
-        let compact = (ClipPreviewStyle(rawValue: styleRaw) ?? .rich) == .compact
-        let min: CGFloat = compact ? 108 : 132
-        let max: CGFloat = compact ? 140 : 168
-        return [GridItem(.adaptive(minimum: min, maximum: max), spacing: 8)]
+        [GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 8)]
     }
 
     var body: some View {
@@ -59,6 +57,7 @@ struct PopupItemsView: View {
             item: item,
             isSelected: selectedIndex == idx,
             onActivate: { onActivate(item) },
+            onTogglePin: { onTogglePin(item) },
             onToggleFavorite: { onToggleFavorite(item) },
             onDelete: { onDelete(item) }
         )
@@ -74,10 +73,14 @@ struct PopupItemsView: View {
         PopupClipCard(
             item: item,
             isSelected: selectedIndex == idx,
+            layout: .gridTile,
             onActivate: { onActivate(item) },
+            onTogglePin: { onTogglePin(item) },
             onToggleFavorite: { onToggleFavorite(item) },
             onDelete: { onDelete(item) }
         )
+        .frame(maxWidth: .infinity)
+        .frame(height: LibraryGridMetrics.tileHeight)
         .id(item.id)
         .onHover { inside in
             guard inside, let onHoverIndex else { return }

@@ -16,6 +16,16 @@ enum AppShortcutAction: String, CaseIterable, Identifiable, Codable {
     case pasteClip7
     case pasteClip8
     case pasteClip9
+    case pastePinned0
+    case pastePinned1
+    case pastePinned2
+    case pastePinned3
+    case pastePinned4
+    case pastePinned5
+    case pastePinned6
+    case pastePinned7
+    case pastePinned8
+    case pastePinned9
 
     var id: String { rawValue }
 
@@ -34,6 +44,16 @@ enum AppShortcutAction: String, CaseIterable, Identifiable, Codable {
         case .pasteClip7: return "Paste Clip 8"
         case .pasteClip8: return "Paste Clip 9"
         case .pasteClip9: return "Paste Clip 10"
+        case .pastePinned0: return "Paste Pinned Slot 1"
+        case .pastePinned1: return "Paste Pinned Slot 2"
+        case .pastePinned2: return "Paste Pinned Slot 3"
+        case .pastePinned3: return "Paste Pinned Slot 4"
+        case .pastePinned4: return "Paste Pinned Slot 5"
+        case .pastePinned5: return "Paste Pinned Slot 6"
+        case .pastePinned6: return "Paste Pinned Slot 7"
+        case .pastePinned7: return "Paste Pinned Slot 8"
+        case .pastePinned8: return "Paste Pinned Slot 9"
+        case .pastePinned9: return "Paste Pinned Slot 10"
         }
     }
 
@@ -53,8 +73,25 @@ enum AppShortcutAction: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    var pastePinnedSlot: Int? {
+        switch self {
+        case .pastePinned0: return 0
+        case .pastePinned1: return 1
+        case .pastePinned2: return 2
+        case .pastePinned3: return 3
+        case .pastePinned4: return 4
+        case .pastePinned5: return 5
+        case .pastePinned6: return 6
+        case .pastePinned7: return 7
+        case .pastePinned8: return 8
+        case .pastePinned9: return 9
+        default: return nil
+        }
+    }
+
     static var defaults: [AppShortcutAction: KeyCombo] {
         let ctrlCmd: NSEvent.ModifierFlags = [.control, .command]
+        let ctrlOptCmd: NSEvent.ModifierFlags = [.control, .option, .command]
         return [
             .openQuickSearch: KeyCombo(keyCode: UInt32(kVK_ANSI_V), modifiers: ctrlCmd),
             .openLibrary: KeyCombo(keyCode: UInt32(kVK_ANSI_L), modifiers: ctrlCmd),
@@ -69,6 +106,16 @@ enum AppShortcutAction: String, CaseIterable, Identifiable, Codable {
             .pasteClip7: KeyCombo(keyCode: UInt32(kVK_ANSI_8), modifiers: ctrlCmd),
             .pasteClip8: KeyCombo(keyCode: UInt32(kVK_ANSI_9), modifiers: ctrlCmd),
             .pasteClip9: KeyCombo(keyCode: UInt32(kVK_ANSI_0), modifiers: ctrlCmd),
+            .pastePinned0: KeyCombo(keyCode: UInt32(kVK_ANSI_1), modifiers: ctrlOptCmd),
+            .pastePinned1: KeyCombo(keyCode: UInt32(kVK_ANSI_2), modifiers: ctrlOptCmd),
+            .pastePinned2: KeyCombo(keyCode: UInt32(kVK_ANSI_3), modifiers: ctrlOptCmd),
+            .pastePinned3: KeyCombo(keyCode: UInt32(kVK_ANSI_4), modifiers: ctrlOptCmd),
+            .pastePinned4: KeyCombo(keyCode: UInt32(kVK_ANSI_5), modifiers: ctrlOptCmd),
+            .pastePinned5: KeyCombo(keyCode: UInt32(kVK_ANSI_6), modifiers: ctrlOptCmd),
+            .pastePinned6: KeyCombo(keyCode: UInt32(kVK_ANSI_7), modifiers: ctrlOptCmd),
+            .pastePinned7: KeyCombo(keyCode: UInt32(kVK_ANSI_8), modifiers: ctrlOptCmd),
+            .pastePinned8: KeyCombo(keyCode: UInt32(kVK_ANSI_9), modifiers: ctrlOptCmd),
+            .pastePinned9: KeyCombo(keyCode: UInt32(kVK_ANSI_0), modifiers: ctrlOptCmd),
         ]
     }
 }

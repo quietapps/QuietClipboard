@@ -1,10 +1,17 @@
 import SwiftUI
 import AppKit
 
+enum ClipboardCardLayout {
+    case flexible
+    case gridTile
+}
+
 struct ClipboardItemCard: View {
     @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
+    var layout: ClipboardCardLayout = .flexible
     var isCopyHistoryExpanded: Bool = false
     var onToggleCopyHistory: (() -> Void)?
 
@@ -16,12 +23,15 @@ struct ClipboardItemCard: View {
 
     var body: some View {
         Group {
-            if clipPreviewStyle == .compact {
+            if clipPreviewStyle == .compact && layout != .gridTile {
                 compactBody
             } else {
                 richBody
             }
         }
+        .frame(height: layout == .gridTile ? LibraryGridMetrics.tileHeight : nil)
+        .frame(maxWidth: layout == .gridTile ? .infinity : nil)
+        .clipped()
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
@@ -37,13 +47,21 @@ struct ClipboardItemCard: View {
     }
 
     private var richBody: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: layout == .gridTile ? 0 : 6) {
             ZStack(alignment: .topTrailing) {
-                ClipboardItemPreview(item: item)
-                    .frame(height: 120)
+                ClipboardItemPreview(item: item, compactRedaction: true)
+                    .frame(height: layout == .gridTile ? LibraryGridMetrics.previewHeight : 120)
+                    .frame(maxWidth: .infinity)
                     .clipped()
 
                 HStack(spacing: 4) {
+                    if pinned.isPinned(item.id) {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .padding(4)
+                            .background(.thinMaterial, in: Circle())
+                    }
                     if item.isSensitive && !coordinator.isSensitiveRevealed(item.id) {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
@@ -64,7 +82,9 @@ struct ClipboardItemCard: View {
             }
 
             cardFooter
+                .frame(height: layout == .gridTile ? LibraryGridMetrics.footerHeight : nil, alignment: .top)
         }
+        .frame(maxHeight: layout == .gridTile ? LibraryGridMetrics.tileHeight : nil, alignment: .top)
     }
 
     private var compactBody: some View {
@@ -87,33 +107,46 @@ struct ClipboardItemCard: View {
     }
 
     private var cardFooter: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                if clipPreviewStyle == .rich {
-                    SensitiveClipLabel(item: item, font: .callout, lineLimit: 2, monospaced: item.contentType == .code)
-                }
-                HStack(spacing: 4) {
-                    StructuredDataBadgeRow(item: item, compact: true)
-                    ClipSourceIcon(item: item, size: 12)
-                    Text(item.sourceAppName ?? "Unknown")
-                        .font(.caption2)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            if clipPreviewStyle == .rich || layout == .gridTile {
+                SensitiveClipLabel(
+                    item: item,
+                    font: layout == .gridTile ? .caption : .callout,
+                    lineLimit: 2,
+                    monospaced: item.contentType == .code
+                )
+                .fixedSize(horizontal: false, vertical: true)
             }
-            if let onToggleCopyHistory {
+            HStack(alignment: .center, spacing: 6) {
+                StructuredDataBadgeRow(item: item, compact: true)
+                ClipSourceIcon(item: item, size: 12)
+                Text(item.sourceAppName ?? "Unknown")
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            if layout == .gridTile, item.effectiveCopyCount > 1 {
+                DuplicateCopyBadge(item: item)
+            } else if let onToggleCopyHistory {
                 CopyHistoryAccessory(
                     item: item,
                     isExpanded: isCopyHistoryExpanded,
                     onToggle: onToggleCopyHistory
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, clipPreviewStyle == .compact ? 0 : 8)
-        .padding(.bottom, clipPreviewStyle == .compact ? 0 : 8)
+        .padding(.horizontal, layout == .gridTile || clipPreviewStyle == .rich ? 8 : 0)
+        .padding(.vertical, layout == .gridTile ? 6 : 0)
+        .padding(.bottom, layout == .gridTile ? 0 : (clipPreviewStyle == .compact ? 0 : 8))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
     }
 
     private var typeBadge: some View {
@@ -127,6 +160,7 @@ struct ClipboardItemCard: View {
 
 struct ClipboardItemRow: View {
     @EnvironmentObject private var coordinator: AppCoordinator
+    @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
     var isCopyHistoryExpanded: Bool = false
@@ -168,8 +202,15 @@ struct ClipboardItemRow: View {
                     onToggle: onToggleCopyHistory
                 )
             }
-            if item.isFavorite {
-                Image(systemName: "star.fill").foregroundStyle(.yellow)
+            HStack(spacing: 4) {
+                if pinned.isPinned(item.id) {
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if item.isFavorite {
+                    Image(systemName: "star.fill").foregroundStyle(.yellow)
+                }
             }
         }
         .padding(.horizontal, 8)

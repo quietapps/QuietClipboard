@@ -65,10 +65,12 @@ final class RetentionManager {
             predicate: #Predicate { !$0.isFavorite && $0.createdAt < cutoff }
         )
         guard let items = try? context.fetch(desc) else { return }
-        for item in items {
+        let pinnedIDs = PinnedClipStore.shared.allPinnedItemIDs()
+        for item in items where !pinnedIDs.contains(item.id) {
             context.delete(item)
         }
         try? context.save()
+        PinnedClipStore.shared.pruneMissingItems(context: context)
     }
 
     func clearAll() {
@@ -77,6 +79,7 @@ final class RetentionManager {
         guard let items = try? context.fetch(desc) else { return }
         for item in items { context.delete(item) }
         try? context.save()
+        PinnedClipStore.shared.clearAll()
     }
 
     func clearNonFavorites() {
@@ -85,8 +88,12 @@ final class RetentionManager {
             predicate: #Predicate { !$0.isFavorite }
         )
         guard let items = try? context.fetch(desc) else { return }
-        for item in items { context.delete(item) }
+        let pinnedIDs = PinnedClipStore.shared.allPinnedItemIDs()
+        for item in items where !pinnedIDs.contains(item.id) {
+            context.delete(item)
+        }
         try? context.save()
+        PinnedClipStore.shared.pruneMissingItems(context: context)
     }
 
     /// Deletes non-favorited items whose last copy time is older than `interval`.
@@ -98,9 +105,11 @@ final class RetentionManager {
             predicate: #Predicate { !$0.isFavorite }
         )
         guard let items = try? context.fetch(desc) else { return 0 }
-        let stale = items.filter { $0.effectiveLastCopiedAt < cutoff }
+        let pinnedIDs = PinnedClipStore.shared.allPinnedItemIDs()
+        let stale = items.filter { $0.effectiveLastCopiedAt < cutoff && !pinnedIDs.contains($0.id) }
         for item in stale { context.delete(item) }
         try? context.save()
+        PinnedClipStore.shared.pruneMissingItems(context: context)
         return stale.count
     }
 
@@ -143,8 +152,12 @@ final class RetentionManager {
             predicate: #Predicate { !$0.isFavorite && $0.contentTypeRaw == raw }
         )
         guard let items = try? context.fetch(desc) else { return }
-        for item in items { context.delete(item) }
+        let pinnedIDs = PinnedClipStore.shared.allPinnedItemIDs()
+        for item in items where !pinnedIDs.contains(item.id) {
+            context.delete(item)
+        }
         try? context.save()
+        PinnedClipStore.shared.pruneMissingItems(context: context)
     }
 
     static func storageUsage() -> Int64 {

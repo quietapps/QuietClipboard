@@ -9,19 +9,17 @@ final class LibraryWindowPresenter: NSObject, NSWindowDelegate {
     static let shared = LibraryWindowPresenter()
 
     private var window: NSWindow?
+    private weak var hostingController: NSHostingController<AnyView>?
 
     func present(coordinator: AppCoordinator) {
-        if let window {
+        if let window, let host = hostingController {
+            host.rootView = AnyView(libraryRoot(coordinator: coordinator))
             show(window)
             return
         }
 
-        let root = LibraryWindow()
-            .environmentObject(coordinator)
-            .environmentObject(coordinator.monitor)
-            .modelContainer(coordinator.container)
-
-        let host = NSHostingController(rootView: root)
+        let host = NSHostingController(rootView: AnyView(libraryRoot(coordinator: coordinator)))
+        hostingController = host
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -39,6 +37,13 @@ final class LibraryWindowPresenter: NSObject, NSWindowDelegate {
 
         window = w
         show(w)
+    }
+
+    private func libraryRoot(coordinator: AppCoordinator) -> some View {
+        LibraryWindow()
+            .environmentObject(coordinator)
+            .environmentObject(coordinator.monitor)
+            .modelContainer(coordinator.container)
     }
 
     private func show(_ window: NSWindow) {
