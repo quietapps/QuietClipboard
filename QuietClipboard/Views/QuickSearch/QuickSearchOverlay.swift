@@ -131,6 +131,14 @@ struct QuickSearchOverlay: View {
                     .font(.title3)
                     .focused($searchFocused)
                     .onSubmit { activate() }
+                if !search.isEmpty {
+                    Button { search = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .pointerCursor()
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -139,6 +147,16 @@ struct QuickSearchOverlay: View {
             filterBar
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
+            if isFiltered {
+                HStack {
+                    Spacer()
+                    Text(countLabel)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 2)
+                }
+            }
             if displayItems.isEmpty {
                 emptyResultsState
             } else {
@@ -175,7 +193,7 @@ struct QuickSearchOverlay: View {
                     typeFilter = nil; favoritesOnly = false; pinnedOnly = false; categoryFilter = nil
                     selectedIndex = 0
                 }
-                FilterChip(label: "Pinned", systemImage: "pin.fill", iconOnly: true, isSelected: pinnedOnly) {
+                FilterChip(label: "Pinned", systemImage: "pin.fill", isSelected: pinnedOnly, showLabel: false) {
                     pinnedOnly.toggle()
                     if pinnedOnly {
                         favoritesOnly = false
@@ -186,7 +204,7 @@ struct QuickSearchOverlay: View {
                     scheduleFilterRefresh()
                 }
                 if enabled.contains(.favorites) {
-                    FilterChip(label: "Favorites", systemImage: "star.fill", iconOnly: true, isSelected: favoritesOnly) {
+                    FilterChip(label: "Favorites", systemImage: "star.fill", isSelected: favoritesOnly, showLabel: false) {
                         favoritesOnly.toggle()
                         if favoritesOnly {
                             pinnedOnly = false
@@ -230,6 +248,18 @@ struct QuickSearchOverlay: View {
         .frame(maxWidth: .infinity)
         .frame(height: 34)
         .clipped()
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.04),
+                    .init(color: .black, location: 0.96),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
     }
 
     private func resetState() {
@@ -330,37 +360,50 @@ struct QuickSearchOverlay: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             PopupViewModePicker(mode: $popupViewMode)
-            BottomBarButton(label: "Library", systemImage: "books.vertical", action: onOpenLibrary)
-            BottomBarButton(
-                label: monitor.isPaused ? "Resume" : "Pause",
+            bottomCircleButton(systemImage: "books.vertical", help: "Library", action: onOpenLibrary)
+            bottomCircleButton(
                 systemImage: monitor.isPaused ? "play.fill" : "pause.fill",
+                help: monitor.isPaused ? "Resume" : "Pause",
                 action: onTogglePause
             )
             SettingsLink {
-                HStack(spacing: 4) {
-                    Image(systemName: "gearshape").font(.caption)
-                    Text("Settings").font(.caption)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .contentShape(Rectangle())
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.secondary.opacity(0.12)))
             }
             .buttonStyle(.borderless)
             .pointerCursor()
+            .help("Settings")
             .simultaneousGesture(TapGesture().onEnded {
                 NSApp.activate(ignoringOtherApps: true)
                 onDismiss()
             })
             Spacer()
             Text(bottomBarHint)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            BottomBarButton(label: "Quit", systemImage: "power", action: onQuit)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            bottomCircleButton(systemImage: "power", help: "Quit", action: onQuit)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func bottomCircleButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Color.secondary.opacity(0.12)))
+        }
+        .buttonStyle(.borderless)
+        .pointerCursor()
+        .help(help)
     }
 
     private var bottomBarHint: String {
@@ -368,6 +411,18 @@ struct QuickSearchOverlay: View {
             return "Pinned · ⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
         }
         return "⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
+    }
+
+    private var isFiltered: Bool {
+        !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || typeFilter != nil || favoritesOnly || pinnedOnly || categoryFilter != nil
+    }
+
+    private var countLabel: String {
+        let total = allItems.count
+        let shown = displayItems.count
+        if shown == total { return "\(shown) items" }
+        return "\(shown) of \(total)"
     }
 
     private func activate() {
@@ -422,46 +477,29 @@ struct QuickSearchOverlay: View {
     }
 }
 
-private struct BottomBarButton: View {
+private struct FilterChip: View {
     let label: String
     let systemImage: String
+    let isSelected: Bool
+    var showLabel: Bool = true
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: systemImage).font(.caption)
-                Text(label).font(.caption)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .pointerCursor()
-    }
-}
-
-private struct FilterChip: View {
-    let label: String
-    let systemImage: String
-    var iconOnly: Bool = false
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: iconOnly ? 0 : 4) {
-                Image(systemName: systemImage)
-                    .font(iconOnly ? .body : .caption)
-                if !iconOnly {
+                if showLabel {
                     Text(label).font(.caption)
                 }
             }
-            .padding(.horizontal, iconOnly ? 7 : 8)
+            .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(isSelected ? Color.accentColor.opacity(0.25) : Color.clear,
-                        in: Capsule())
+            .foregroundStyle(isSelected ? .white : .primary)
+            .background(
+                isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor),
+                in: Capsule()
+            )
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

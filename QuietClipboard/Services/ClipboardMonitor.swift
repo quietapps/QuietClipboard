@@ -28,8 +28,8 @@ final class ClipboardMonitor: ObservableObject {
     private nonisolated let ingestLock = IngestLock()
 
     // Max raw content stored — larger content stored as thumbnail only
-    private static let maxRawBytes = 8 * 1024 * 1024  // 8 MB
-    private static let maxTextBytes = 512 * 1024       // 512 KB
+    private nonisolated(unsafe) static let maxRawBytes = 8 * 1024 * 1024  // 8 MB
+    private nonisolated(unsafe) static let maxTextBytes = 512 * 1024       // 512 KB
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -86,7 +86,7 @@ final class ClipboardMonitor: ObservableObject {
 
     // Snapshot of @MainActor Preferences values — captured before leaving main thread
     struct CaptureSettings: Sendable {
-        let isTypeCaptured: (ClipboardContentType) -> Bool
+        let isTypeCaptured: @Sendable (ClipboardContentType) -> Bool
         let sensitiveDetectionEnabled: Bool
         let sensitiveBehavior: SensitiveBehavior
         let autoCategorizationEnabled: Bool
