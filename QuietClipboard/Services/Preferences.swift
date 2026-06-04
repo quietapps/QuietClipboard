@@ -278,6 +278,34 @@ enum Preferences {
         set { defaults.set(newValue, forKey: "QC.MultiPasteCustomDelimiter") }
     }
 
+    /// When enabled, picking a clip from Quick Search / pinned slot / Ctrl+Cmd+0–9 also pastes
+    /// the clip into the previously-active app (requires Accessibility). When disabled, those
+    /// actions only copy the clip to the system clipboard — the user pastes with ⌘V themselves.
+    /// Disable this if you don't want to grant Accessibility, or prefer manual paste.
+    @MainActor static var autoPasteEnabled: Bool {
+        get { defaults.object(forKey: "QC.AutoPasteEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.AutoPasteEnabled") }
+    }
+
+    /// One-time-per-session flag so we don't badger the user about Accessibility on every Quick
+    /// Search open. Re-shown on next launch if still missing.
+    @MainActor static var didPromptAccessibilityThisSession: Bool = false
+
+    /// Restore the user's previous clipboard after pasting a clip. Default OFF — snapshotting and
+    /// re-writing the full pasteboard can stall the UI when the prior clipboard holds large
+    /// images. Opt in from Settings → General → Paste when you want the Paste/Raycast-style
+    /// "leave my working clipboard intact" behavior.
+    @MainActor static var restoreClipboardAfterPaste: Bool {
+        get { defaults.object(forKey: "QC.RestoreClipboardAfterPaste") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "QC.RestoreClipboardAfterPaste") }
+    }
+
+    /// Brief on-screen confirmation HUD after copy / paste actions.
+    @MainActor static var showPasteFeedbackHUD: Bool {
+        get { defaults.object(forKey: "QC.ShowFeedbackHUD") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.ShowFeedbackHUD") }
+    }
+
     @MainActor static var quickSearchLastOrigin: CGPoint? {
         get {
             guard let s = defaults.string(forKey: "QC.QSLastOrigin") else { return nil }

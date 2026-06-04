@@ -18,21 +18,24 @@ enum ClipSearchRanker {
 
         let tokens = queryTokens(q)
         let typeHint = contentTypeHint(for: q)
-        let pool = items.count > poolCap ? Array(items.prefix(poolCap)) : items
 
-        return pool
-            .compactMap { item -> (ClipboardItem, Double)? in
-                let score = score(item, query: q, tokens: tokens, typeHint: typeHint)
-                return score >= minScore ? (item, score) : nil
-            }
-            .sorted { $0.1 > $1.1 }
-            .map(\.0)
+        // Exact / substring matching runs over the ENTIRE history so a clip deep in the past is
+        // never silently missed. Only the expensive fuzzy (Levenshtein) pass is bounded to the
+        // most-recent `poolCap` items for typing responsiveness (callers pass newest-first).
+        var scored: [(ClipboardItem, Double)] = []
+        scored.reserveCapacity(min(items.count, 256))
+        for (idx, item) in items.enumerated() {
+            let allowFuzzy = idx < poolCap
+            let s = score(item, query: q, tokens: tokens, typeHint: typeHint, allowFuzzy: allowFuzzy)
+            if s >= minScore { scored.append((item, s)) }
+        }
+        return scored.sorted { $0.1 > $1.1 }.map(\.0)
     }
 
     static func matches(_ item: ClipboardItem, query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return true }
-        return score(item, query: q, tokens: queryTokens(q), typeHint: contentTypeHint(for: q)) >= minScore
+        return score(item, query: q, tokens: queryTokens(q), typeHint: contentTypeHint(for: q), allowFuzzy: true) >= minScore
     }
 
     // MARK: - Scoring
@@ -41,15 +44,16 @@ enum ClipSearchRanker {
         _ item: ClipboardItem,
         query: String,
         tokens: [String],
-        typeHint: ClipboardContentType?
+        typeHint: ClipboardContentType?,
+        allowFuzzy: Bool
     ) -> Double {
-        guard passesQuickGate(item, query: query, tokens: tokens) else {
+        guard passesQuickGate(item, query: query, tokens: tokens, allowFuzzy: allowFuzzy) else {
             return 0
         }
 
         var best = 0.0
         for field in searchableFields(item) {
-            best = max(best, fieldScore(field: field.text, weight: field.weight, query: query, tokens: tokens))
+            best = max(best, fieldScore(field: field.text, weight: field.weight, query: query, tokens: tokens, allowFuzzy: allowFuzzy))
             if best >= 95 { break }
         }
 
@@ -69,11 +73,11 @@ enum ClipSearchRanker {
     }
 
     /// Cheap gate before full field scoring.
-    private static func passesQuickGate(_ item: ClipboardItem, query: String, tokens: [String]) -> Bool {
+    private static func passesQuickGate(_ item: ClipboardItem, query: String, tokens: [String], allowFuzzy: Bool) -> Bool {
         let blob = searchBlob(for: item)
         if blob.contains(query) { return true }
         if tokens.contains(where: { blob.contains($0) }) { return true }
-        if query.count >= 3, fuzzyNeeded(query: query, tokens: tokens, blob: blob) {
+        if allowFuzzy, query.count >= 3, fuzzyNeeded(query: query, tokens: tokens, blob: blob) {
             return true
         }
         return false
@@ -123,7 +127,8 @@ enum ClipSearchRanker {
         field: String,
         weight: Double,
         query: String,
-        tokens: [String]
+        tokens: [String],
+        allowFuzzy: Bool
     ) -> Double {
         let hay = field.lowercased()
         if hay.contains(query) { return 100 * weight }
@@ -135,7 +140,7 @@ enum ClipSearchRanker {
                 tokenScore += 72
                 continue
             }
-            guard token.count >= 3 else { continue }
+            guard allowFuzzy, token.count >= 3 else { continue }
             let words = hay.split { !$0.isLetter && !$0.isNumber }.map(String.init)
             var bestWord = 0.0
             for word in words.prefix(maxWordsPerField) where word.count >= 2 {

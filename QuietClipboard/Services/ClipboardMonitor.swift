@@ -22,6 +22,8 @@ final class ClipboardMonitor: ObservableObject {
     let modelContainer: ModelContainer  // `let` allows nonisolated access (Sendable)
     private var monitorTask: Task<Void, Never>?
     private var pauseTimer: Timer?
+    private var watchdogTimer: Timer?
+    private var lastTickAt = Date.now
     private var lastChangeCount: Int
     // Written only from MainActor; read on bg by passing snapshot value
     private(set) var lastContentHash: String?
@@ -30,6 +32,8 @@ final class ClipboardMonitor: ObservableObject {
     // Max raw content stored — larger content stored as thumbnail only
     private nonisolated(unsafe) static let maxRawBytes = 8 * 1024 * 1024  // 8 MB
     private nonisolated(unsafe) static let maxTextBytes = 512 * 1024       // 512 KB
+    // Oversized images are downscaled to this max dimension (still a usable paste, not a tiny thumb)
+    private nonisolated(unsafe) static let maxStoredImageDimension: CGFloat = 2048
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -38,17 +42,38 @@ final class ClipboardMonitor: ObservableObject {
 
     func start() {
         guard monitorTask == nil else { return }
+        lastTickAt = .now
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
+        startWatchdog()
     }
 
     func stop() {
         monitorTask?.cancel()
         monitorTask = nil
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    /// Restarts the poll loop if it ever stalls (e.g. a hung await), so capture can't silently die.
+    private func startWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkWatchdog() }
+        }
+    }
+
+    private func checkWatchdog() {
+        guard monitorTask != nil, !isPaused else { return }
+        guard Date.now.timeIntervalSince(lastTickAt) > 5 else { return }
+        NSLog("ClipboardMonitor watchdog: polling stalled — restarting")
+        monitorTask?.cancel()
+        monitorTask = nil
+        start()
     }
 
     func setPaused(_ paused: Bool) {
@@ -84,6 +109,16 @@ final class ClipboardMonitor: ObservableObject {
         lastChangeCount = NSPasteboard.general.changeCount
     }
 
+    /// Call right after the app itself writes the pasteboard (paste/copy from history) so the
+    /// monitor recognizes its own write and skips it on the next tick. Lightweight on purpose —
+    /// this runs on the main thread during every paste/copy; doing a full snapshot + thumbnail
+    /// here would freeze the UI on large images. The `changeCount` check alone reliably
+    /// suppresses the immediate self-write; the DB content-hash dedup in `backgroundIngest`
+    /// catches anything that slips through.
+    func acknowledgeOwnPasteboardWrite() {
+        lastChangeCount = NSPasteboard.general.changeCount
+    }
+
     // Snapshot of @MainActor Preferences values — captured before leaving main thread
     struct CaptureSettings: Sendable {
         let isTypeCaptured: @Sendable (ClipboardContentType) -> Bool
@@ -93,9 +128,14 @@ final class ClipboardMonitor: ObservableObject {
         let autoCategorizationML: Bool
         let captureUniversalClipboard: Bool
         let excludedBundleIDs: Set<String>
+        let screenPixelSizes: [CGSize]
 
         @MainActor
         init() {
+            self.screenPixelSizes = NSScreen.screens.map {
+                CGSize(width: $0.frame.width * $0.backingScaleFactor,
+                       height: $0.frame.height * $0.backingScaleFactor)
+            }
             self.sensitiveDetectionEnabled  = Preferences.sensitiveDetectionEnabled
             self.sensitiveBehavior          = Preferences.sensitiveBehavior
             self.autoCategorizationEnabled  = Preferences.autoCategorizationEnabled
@@ -110,6 +150,7 @@ final class ClipboardMonitor: ObservableObject {
     // MARK: - Tick (main thread — NSPasteboard requires it)
 
     private func tick() async {
+        lastTickAt = .now
         let pb = NSPasteboard.general
         let current = pb.changeCount
         if isPaused { lastChangeCount = current; return }
@@ -157,7 +198,18 @@ final class ClipboardMonitor: ObservableObject {
         priorHash: String?,
         settings: CaptureSettings
     ) async {
-        let type = ContentTypeDetector.detect(snap)
+        var type = ContentTypeDetector.detect(snap)
+        // Full-screen captures match a display's exact pixel size — tag them as screenshots so
+        // the Screenshots section/filter/retention are actually reachable. Region grabs that don't
+        // match a screen stay `.image` (no reliable clipboard marker exists for those).
+        if type == .image,
+           let raw = snap.png ?? snap.tiff,
+           let size = ThumbnailGenerator.pixelSize(forImageData: raw),
+           settings.screenPixelSizes.contains(where: {
+               abs($0.width - size.width) < 2 && abs($0.height - size.height) < 2
+           }) {
+            type = .screenshot
+        }
         guard settings.isTypeCaptured(type) else { return }
         guard let payload = Self.buildPayload(snap: snap, type: type) else { return }
 
@@ -330,8 +382,18 @@ final class ClipboardMonitor: ObservableObject {
         case .image, .screenshot:
             guard let raw = snap.png ?? snap.tiff else { return nil }
             let thumb = ThumbnailGenerator.thumbnail(forImageData: raw)  // CGContext — thread-safe
-            // Store raw only if under limit; otherwise thumbnail serves as content
-            let stored = raw.count > maxRawBytes ? (thumb ?? raw) : raw
+            // Always store valid PNG so the pasteboard `.png` write is correct. For oversized
+            // images, downscale to a usable size (not the tiny UI thumbnail) so paste still
+            // yields a real image rather than a 200px crop.
+            let stored: Data
+            if raw.count > maxRawBytes {
+                stored = ThumbnailGenerator.pngData(forImageData: raw, maxDimension: maxStoredImageDimension)
+                    ?? thumb ?? raw
+            } else if snap.png != nil {
+                stored = raw                                                   // already PNG
+            } else {
+                stored = ThumbnailGenerator.pngData(forImageData: raw) ?? raw  // TIFF → PNG
+            }
             return Payload(content: stored, text: nil, thumbnail: thumb,
                            fileSize: Int64(raw.count), mime: "image/png")
 

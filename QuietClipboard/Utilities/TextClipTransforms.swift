@@ -70,6 +70,15 @@ enum TextClipTransforms {
         }
     }
 
+    /// Non-destructive: returns the transformed text for a clip without touching the stored item.
+    @MainActor
+    static func transformedText(_ transform: TextClipTransform, for item: ClipboardItem) -> String? {
+        guard let source = item.resolvedText else { return nil }
+        return apply(transform, to: source)
+    }
+
+    /// Destructive in-place edit — replaces the stored clip's content. Kept for an explicit
+    /// "Replace original" action; the default Transform menu uses `transformedText` instead.
     @MainActor
     static func apply(_ transform: TextClipTransform, to item: ClipboardItem, context: ModelContext) {
         guard let source = item.resolvedText,

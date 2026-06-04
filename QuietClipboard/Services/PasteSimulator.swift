@@ -4,16 +4,33 @@ import Carbon.HIToolbox
 enum PasteSimulator {
     private static let charDelay: TimeInterval = 0.0015
 
+    /// Invoked (on main) when an automatic paste can't run because Accessibility isn't granted.
+    /// The clip is already on the pasteboard, so the user can paste manually; this is for guidance.
+    @MainActor static var onAccessibilityNeeded: (() -> Void)?
+
     static func plainText(from item: ClipboardItem) -> String? {
         item.resolvedText
     }
 
+    /// True when we can synthesize keystrokes. If not, fires `onAccessibilityNeeded` so the app
+    /// can guide the user instead of silently doing nothing.
+    @MainActor private static func ensureAccessibility() -> Bool {
+        if AccessibilityPermissionHelper.isGranted { return true }
+        onAccessibilityNeeded?()
+        return false
+    }
+
     /// Sends ⌘V after activating the target app (pasteboard must already contain the clip).
-    static func performPaste(priorApp: NSRunningApplication?) {
+    /// `afterPaste` runs shortly after the keystroke — used to restore the prior clipboard.
+    static func performPaste(priorApp: NSRunningApplication?, afterPaste: (() -> Void)? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             priorApp?.activate(options: [])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard ensureAccessibility() else { return }   // leave clip on pasteboard for manual paste
                 postCommandV()
+                if let afterPaste {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: afterPaste)
+                }
             }
         }
     }
@@ -27,6 +44,7 @@ enum PasteSimulator {
     static func typeIntoApp(_ text: String, priorApp: NSRunningApplication?) {
         priorApp?.activate(options: [])
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard ensureAccessibility() else { return }
             DispatchQueue.global(qos: .userInitiated).async {
                 typeTextSynchronously(text)
             }
@@ -44,8 +62,14 @@ enum PasteSimulator {
         up?.post(tap: .cghidEventTap)
     }
 
-    static func capturedFrontmost() -> NSRunningApplication? {
-        NSWorkspace.shared.frontmostApplication
+    /// The app to paste into. If our own window is frontmost (e.g. the Library is open), falls back
+    /// to the last external app so paste-by-index / multi-paste don't paste into ourselves.
+    @MainActor static func capturedFrontmost() -> NSRunningApplication? {
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.bundleIdentifier == Bundle.main.bundleIdentifier {
+            return FrontmostAppTracker.shared.lastExternalApp ?? front
+        }
+        return front
     }
 
     private static func typeTextSynchronously(_ text: String) {

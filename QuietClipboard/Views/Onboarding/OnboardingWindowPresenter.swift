@@ -10,17 +10,17 @@ final class OnboardingWindowPresenter: NSObject, NSWindowDelegate {
     private weak var hostingController: NSHostingController<AnyView>?
     private var didCompleteThisSession = false
 
-    func present(coordinator: AppCoordinator, force: Bool = false) {
+    func present(coordinator: AppCoordinator, force: Bool = false, initialStep: OnboardingStep? = nil) {
         guard force || !Preferences.hasCompletedOnboarding else { return }
         didCompleteThisSession = false
 
         if let window, let host = hostingController {
-            host.rootView = AnyView(root(coordinator: coordinator))
+            host.rootView = AnyView(root(coordinator: coordinator, initialStep: initialStep))
             show(window)
             return
         }
 
-        let host = NSHostingController(rootView: AnyView(root(coordinator: coordinator)))
+        let host = NSHostingController(rootView: AnyView(root(coordinator: coordinator, initialStep: initialStep)))
         hostingController = host
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
@@ -42,8 +42,9 @@ final class OnboardingWindowPresenter: NSObject, NSWindowDelegate {
         show(w)
     }
 
-    private func root(coordinator: AppCoordinator) -> some View {
+    private func root(coordinator: AppCoordinator, initialStep: OnboardingStep? = nil) -> some View {
         OnboardingView(
+            initialStep: initialStep,
             onComplete: { [weak self] in
                 self?.markCompletedAndClose()
             },

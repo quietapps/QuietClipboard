@@ -92,16 +92,20 @@ enum MultiPasteService {
         let delivery = method ?? Preferences.pasteDeliveryMethod
         switch delivery {
         case .standardPaste:
+            let priorArchive = Preferences.restoreClipboardAfterPaste
+                ? PasteboardHelper.archiveData(from: .general) : nil
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.setString(combined, forType: .string)
+            monitor.acknowledgeOwnPasteboardWrite()   // hash of the combined text, so it isn't re-ingested
             for item in items {
                 ClipboardItemUsage.recordUsage(item, context: context, monitor: monitor)
             }
-            for item in items {
-                monitor.acknowledgeUserCopy(contentHash: item.contentHash)
+            PasteSimulator.performPaste(priorApp: priorApp) {
+                guard let priorArchive else { return }
+                _ = PasteboardHelper.restoreArchive(priorArchive, to: .general)
+                monitor.acknowledgeOwnPasteboardWrite()
             }
-            PasteSimulator.performPaste(priorApp: priorApp)
         case .autoType:
             for item in items {
                 ClipboardItemUsage.recordUsage(item, context: context, monitor: monitor)

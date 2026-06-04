@@ -32,7 +32,7 @@ struct QuietClipboardApp: App {
                   ? "doc.on.clipboard"
                   : "doc.on.clipboard.fill")
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
 
         .commands { CommandGroup(replacing: .newItem) {} }
 

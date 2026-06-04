@@ -25,6 +25,7 @@ struct QuickSearchOverlay: View {
     @State private var filterTask: Task<Void, Never>?
 
     var onPaste: (ClipboardItem) -> Void
+    var onPlainPaste: (ClipboardItem) -> Void
     var onDismiss: () -> Void
     var onOpenLibrary: () -> Void
     var onTogglePause: () -> Void
@@ -115,7 +116,8 @@ struct QuickSearchOverlay: View {
             onFavorite: favoriteSelected,
             onDelete: deleteSelected,
             onPin: pinSelected,
-            onType: typeSelected
+            onType: typeSelected,
+            onPlainEnter: activatePlain
         ))
         .onExitCommand(perform: onDismiss)
     }
@@ -432,6 +434,13 @@ struct QuickSearchOverlay: View {
         onPaste(item)
     }
 
+    private func activatePlain() {
+        guard displayItems.indices.contains(selectedIndex) else { return }
+        let item = displayItems[selectedIndex]
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        onPlainPaste(item)
+    }
+
     private func typeSelected() {
         guard let item = previewItem,
               PasteSimulator.plainText(from: item) != nil else { return }
@@ -745,6 +754,7 @@ struct KeyHandler: NSViewRepresentable {
     var onDelete: (() -> Void)?
     var onPin: (() -> Void)?
     var onType: (() -> Void)?
+    var onPlainEnter: (() -> Void)?
 
     func makeNSView(context: Context) -> KeyHandlerView {
         let v = KeyHandlerView()
@@ -756,6 +766,7 @@ struct KeyHandler: NSViewRepresentable {
         v.onDelete = onDelete
         v.onPin = onPin
         v.onType = onType
+        v.onPlainEnter = onPlainEnter
         return v
     }
 
@@ -768,6 +779,7 @@ struct KeyHandler: NSViewRepresentable {
         nsView.onDelete = onDelete
         nsView.onPin = onPin
         nsView.onType = onType
+        nsView.onPlainEnter = onPlainEnter
     }
 }
 
@@ -780,6 +792,7 @@ final class KeyHandlerView: NSView {
     var onDelete: (() -> Void)?
     var onPin: (() -> Void)?
     var onType: (() -> Void)?
+    var onPlainEnter: (() -> Void)?
 
     private var monitor: Any?
 
@@ -810,7 +823,12 @@ final class KeyHandlerView: NSView {
             }
             switch event.keyCode {
             case 36, 76: // return, keypad enter
-                self.onEnter?(); return nil
+                if event.modifierFlags.contains(.shift), self.onPlainEnter != nil {
+                    self.onPlainEnter?()       // ⇧↩ pastes as plain text
+                } else {
+                    self.onEnter?()
+                }
+                return nil
             case 53: // escape
                 self.onEscape?(); return nil
             case 126: // up

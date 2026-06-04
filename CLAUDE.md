@@ -13,7 +13,7 @@ Native macOS clipboard history manager. Swift + SwiftUI. Saves everything copied
 - UI: SwiftUI (entire app)
 - Data: SwiftData with SQLite backing. Store at `~/Library/Application Support/QuietClipboard/`
 - Concurrency: async/await, actors. Clipboard monitor on background actor. Never block main thread.
-- Lifecycle: Menu bar app (`LSUIElement = true`). No Dock icon by default. UI surfaces: (1) menu bar popover, (2) notch shelf / Dynamic Island floating panel, (3) quick search overlay, (4) full Library window.
+- Lifecycle: Menu bar app (`LSUIElement = true`). No Dock icon by default. UI surfaces: (1) menu bar popover [implemented], (2) notch shelf / Dynamic Island floating panel [**not implemented — planned**], (3) quick search overlay [implemented], (4) full Library window [implemented].
 - Single Xcode project, minimal external deps. Prefer Apple frameworks (Vision, LinkPresentation, NaturalLanguage).
 
 ## Core Data Model (SwiftData)
@@ -110,6 +110,8 @@ Default: NOT saved. Settings: (a) don't save, (b) save but blur, (c) save normal
 
 ## Feature 3: Notch Shelf / Dynamic Island Panel
 
+> **Status: NOT IMPLEMENTED (planned).** No `Views/NotchPanel/` files, no `Ctrl+Cmd+N` binding, and no `.openNotch` shortcut action exist in code. This section describes intended design only. The Quick Search overlay (Feature 4) currently serves the fast drag/click-to-paste need.
+
 Floating panel at top center. Two modes:
 
 ### Notch Mode
@@ -201,7 +203,7 @@ Icon states:
 | Action | Default |
 |--------|---------|
 | Open Quick Search | `Ctrl+Cmd+V` |
-| Open Notch/Island | `Ctrl+Cmd+N` |
+| ~~Open Notch/Island~~ (not implemented) | `Ctrl+Cmd+N` |
 | Open Library | `Ctrl+Cmd+L` |
 | Paste clip 1-10 | `Ctrl+Cmd+0` … `Ctrl+Cmd+9` |
 | Toggle capture | `Ctrl+Cmd+P` |
@@ -239,6 +241,8 @@ LinkPresentation.
 - ONLY network operation in app. Toggleable in Settings.
 
 ## Feature 10: macOS Widgets
+
+> **Status: NOT IMPLEMENTED (planned).** There is no `Widgets/` target or `WidgetKit`/`AppIntents` code in the project. This section describes intended design only.
 
 WidgetKit.
 

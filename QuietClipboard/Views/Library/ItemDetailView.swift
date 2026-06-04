@@ -231,8 +231,42 @@ struct ItemDetailView: View {
         }
     }
 
+    private var fileURL: URL? {
+        guard item.contentType == .file,
+              let s = item.textContent, let u = URL(string: s), u.isFileURL else { return nil }
+        return u
+    }
+
+    @ViewBuilder
+    private var shareControl: some View {
+        switch item.contentType {
+        case .file:
+            if let url = fileURL { ShareLink(item: url) }
+        case .image, .screenshot:
+            if let nsImg = NSImage(data: item.content) {
+                let image = Image(nsImage: nsImg)
+                ShareLink(item: image, preview: SharePreview(item.title ?? "Image", image: image))
+            }
+        case .link:
+            if let s = item.textContent, let url = URL(string: s) { ShareLink(item: url) }
+        default:
+            if let text = item.resolvedText { ShareLink(item: text) }
+        }
+    }
+
     private var exportMenu: some View {
         Menu {
+            shareControl
+            if QuickLookPreview.canPreview(item) {
+                Button("Quick Look") { QuickLookPreview.show(for: item) }
+            }
+            if let url = fileURL {
+                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                Button("Open") { NSWorkspace.shared.open(url) }
+            }
+            if RichContentRenderer.canExportMarkdown(item) || RichContentRenderer.canExportRTF(item) {
+                Divider()
+            }
             if RichContentRenderer.canExportMarkdown(item) {
                 Button("Export as Markdown…") {
                     ClipExportService.presentSavePanel(for: item, format: .markdown)
@@ -248,7 +282,6 @@ struct ItemDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .pointerCursor()
-        .disabled(!RichContentRenderer.canExportMarkdown(item) && !RichContentRenderer.canExportRTF(item))
     }
 
     private var plainTextBlock: some View {

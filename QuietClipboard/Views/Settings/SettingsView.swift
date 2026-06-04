@@ -151,8 +151,19 @@ private struct GeneralSettingsPanel: View {
 
             SettingsCard(
                 title: "Paste",
-                footer: "Auto-type sends keystrokes for apps that block paste (banking, RDP)."
+                footer: "Auto-paste requires Accessibility permission. When off, picking a clip only copies it; press ⌘V to paste manually."
             ) {
+                SettingsToggleRow(
+                    title: "Auto-paste into active app",
+                    subtitle: "After choosing a clip, also paste it into the previously-active app",
+                    icon: "wand.and.stars",
+                    iconTint: .indigo,
+                    isOn: Binding(
+                        get: { Preferences.autoPasteEnabled },
+                        set: { Preferences.autoPasteEnabled = $0 }
+                    )
+                )
+                SettingsInsetDivider()
                 SettingsPickerRow(
                     title: "Default paste method",
                     icon: "arrow.right.doc.on.clipboard",
@@ -169,6 +180,28 @@ private struct GeneralSettingsPanel: View {
                         Text(method.displayName).tag(method)
                     }
                 }
+                SettingsInsetDivider()
+                SettingsToggleRow(
+                    title: "Keep clipboard after paste",
+                    subtitle: "Restores your previous clipboard once the clip is pasted",
+                    icon: "arrow.uturn.backward",
+                    iconTint: .teal,
+                    isOn: Binding(
+                        get: { Preferences.restoreClipboardAfterPaste },
+                        set: { Preferences.restoreClipboardAfterPaste = $0 }
+                    )
+                )
+                SettingsInsetDivider()
+                SettingsToggleRow(
+                    title: "Show paste confirmation",
+                    subtitle: "Brief on-screen confirmation after copy and paste",
+                    icon: "checkmark.bubble.fill",
+                    iconTint: .green,
+                    isOn: Binding(
+                        get: { Preferences.showPasteFeedbackHUD },
+                        set: { Preferences.showPasteFeedbackHUD = $0 }
+                    )
+                )
             }
 
             SettingsCard(title: "Appearance") {

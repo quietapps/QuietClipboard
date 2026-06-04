@@ -56,5 +56,9 @@ final class LibraryWindowPresenter: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         (notification.object as? NSWindow)?.orderOut(nil)
+        // Tear down the heavy LibraryWindow (and its unbounded @Query, which otherwise keeps
+        // re-fetching the whole history on every captured clip) while the window is hidden.
+        // present() rebuilds the root view on reopen.
+        hostingController?.rootView = AnyView(EmptyView())
     }
 }

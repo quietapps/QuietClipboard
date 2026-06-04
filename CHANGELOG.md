@@ -7,27 +7,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
 
-## [0.1.8] — 2026-06-04
+## [0.2.0] — 2026-06-04
 
-Version **0.1.8**
+Version **0.2.0**
 
 ### Build 1
 
-#### Added
+A correctness, paste-experience, performance, and feature pass.
 
-- **Quick Search clear button** — × button appears in the search field whenever text is entered; clears the query in one click
-- **Quick Search result count** — a compact "X of Y" label appears below the filter bar whenever a filter or search is active
+### Added
 
-#### Changed
+- **Restore clipboard after paste** — when you paste a clip from history, your previous clipboard is restored afterward so your working clipboard is left intact (Paste/Raycast-style). Toggle in Settings → General → Paste.
+- **Paste as Plain Text** — strips formatting at paste time. Press **⇧↩** in Quick Search, or use the right-click menu on any clip.
+- **Accessibility paste guidance** — if automatic paste can't run because Accessibility permission is missing or was revoked, a tappable HUD now guides you to grant it instead of silently doing nothing. The clip is still placed on the clipboard for manual paste.
+- **Paste / copy confirmation HUD** — a brief on-screen confirmation after copy and paste. Toggle in Settings → General → Paste.
+- **Rich menu bar popover** — the menu bar item now opens a searchable popover with thumbnail rows, per-row pin / favorite / delete, and a quick-action footer (Library, Quick Search, Pause, Settings, Quit), replacing the plain text menu.
+- **Quick Look, Reveal in Finder, Open, and Share** — available from the item detail menu and the clip right-click menu. File clips preview the original file; image clips preview a rendered copy.
 
-- **Quick Search bottom bar** — Library, Pause/Resume, Settings, and Quit are now icon-only circle buttons matching the toolbar style; text labels removed
-- **Quick Search filter chips** — selected chip now fills with solid accent color and white text instead of a translucent tint; ctive state at a glance
-- **Quick Search filter bar fade** — a gradient mask fades both edges of the filter bar so chips scroll smoothly off-screen without hard clipping
-- **Pinned and Favorites chips** — icon-only in the filter bar; tooltip and VoiceOver still expose the full label
+### Changed
 
-#### Fixed
+- **Text transforms are now non-destructive** — “Transform” copies the transformed result to the clipboard (captured as a new clip) instead of overwriting the stored clip. The original is preserved.
+- **Search covers your whole history** — exact and substring matches are now found across all clips; only the typo-tolerant (fuzzy) pass is bounded to the most recent items for responsiveness. Previously, matches beyond the 800 most-recent clips were silently missed.
+- **Faster Library and lists** — the Library’s ranked search result is cached per input, source-app icons are cached instead of resolved per cell on every render, the Library window’s query is torn down while the window is closed, and the menu bar and paste-by-index fetches are bounded.
+- **Better content detection** — full-screen screenshots are now tagged as screenshots; URL detection covers `mailto:`, `ftp:`, and bare `www.`; code detection is stricter (fewer plain-text notes misclassified as code); `rgb()` / `hsl()` colors normalize to hex so they deduplicate with the equivalent `#hex`.
 
-- **Swift 6 concurrency** — `ClipboardMonitor` static size constants (`maxRawBytes`, `maxTextBytes`) marked `nonisolated(unsafe)`; `isTypeCaptured` closure annotated `@Sendable`; resolves actor-isolation errors under Swift 6 language mode
+### Fixed
+
+- **Corrupt paste of large images** — images are now always written to the pasteboard as valid PNG (plus TIFF for compatibility), re-encoding whatever was stored. This also repairs older items that were stored as JPEG/TIFF but tagged as PNG. Oversized images are downscaled to a usable size rather than reduced to a tiny thumbnail.
+- **Copy counts no longer inflate** — pasting a clip from history is correctly recognized as the app’s own pasteboard write and is not re-ingested as a new copy, regardless of representation differences.
+- **Paste targets the right app** — paste-by-index (`Ctrl+Cmd+0–9`) and multi-paste no longer paste into Quiet Clipboard’s own Library/Settings window; they target the previously-active app.
+- **Sensitive content** — detection no longer skips pastes larger than 200 KB (it scans the start and end); added modern token formats (`sk-proj-`, `gho_`, GitLab, Google); credit-card matching is tighter to reduce false positives on long numeric IDs.
+- **Near-duplicate detection** — bounded so a pair of very large clips can no longer allocate an enormous edit-distance matrix; candidate clips are now sorted by recency.
+- **Capture reliability** — a watchdog restarts clipboard polling if it ever stalls, so capture can’t silently stop.
 
 ---
 
@@ -70,7 +81,7 @@ Version **0.1.7**
 - **Quick Search open speed** — panel is pre-built at launch and kept alive between opens; subsequent opens are near-instant instead of rebuilding the full SwiftUI hierarchy each time
 - **Scroll position** — Quick Search list always resets to top on open so the latest copy is immediately visible
 - **Link preview card** — redesigned with card background and border; raw URL moved to a compact bottom strip instead of floating in empty space
-- **Text and rich-text thumbnails** — small row thumbnails now render plain text instead of a crollView (no more scrollbar visible in the 50 pt thumbnail)
+- **Text and rich-text thumbnails** — small row thumbnails now render plain text instead of a live NSScrollView (no more scrollbar visible in the 50 pt thumbnail)
 - **Color clip display** — label shows the text as originally copied (e.g. `E60EC9` without `#`) rather than always inserting a `#` prefix
 - **Settings — Open at / Display** — the Display picker now appears directly below Open at instead of at the bottom of the card
 - **Filter bar scrollbar** — horizontal scroller is hidden by default; drag-to-scroll and trackpad scroll still work
@@ -80,7 +91,7 @@ Version **0.1.7**
 
 - **Duplicate clipboard entries** — concurrent ingest tasks for the same content are now serialised via an actor lock; two rapid identical copies no longer create two separate items
 - **Color clips creating two entries** — `E60EC9` and `#E60EC9` now normalise to the same content hash so they deduplicate to a single item
-- **Quick Search blocked after copy** — pasteboard IPC read (can be 20–100 ms for large images) no longer delandler; a cooperative yield after the read lets the panel appear immediately
+- **Quick Search blocked after copy** — pasteboard IPC read (can be 20–100 ms for large images) no longer delays the shortcut handler; a cooperative yield after the read lets the panel appear immediately
 - **Redundant pasteboard reads** — TIFF data is skipped when PNG is already present; absent types are never read, reducing unnecessary IPC round-trips
 
 ---

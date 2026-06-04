@@ -4,12 +4,14 @@ import AppKit
 struct OnboardingView: View {
     @EnvironmentObject private var coordinator: AppCoordinator
 
+    var initialStep: OnboardingStep? = nil
     var onComplete: () -> Void
     var onOpenCaptureSettings: () -> Void
     var onTryQuickSearch: () -> Void
     var onOpenLibrary: () -> Void
 
     @State private var stepIndex = 0
+    @State private var didApplyInitialStep = false
     @State private var accessibilityGranted = AccessibilityPermissionHelper.isGranted
 
     private var step: OnboardingStep {
@@ -39,7 +41,13 @@ struct OnboardingView: View {
             }
         }
         .frame(width: 520, height: 620)
-        .onAppear { refreshAccessibility() }
+        .onAppear {
+            refreshAccessibility()
+            if !didApplyInitialStep, let s = initialStep {
+                stepIndex = s.rawValue
+            }
+            didApplyInitialStep = true
+        }
         .onChange(of: stepIndex) { _, _ in refreshAccessibility() }
     }
 

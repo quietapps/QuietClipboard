@@ -1,8 +1,8 @@
 import SwiftUI
 import SwiftData
+import AppKit
 
 struct TextTransformMenu: View {
-    @Environment(\.modelContext) private var context
     let item: ClipboardItem
 
     var body: some View {
@@ -10,13 +10,18 @@ struct TextTransformMenu: View {
             Menu {
                 ForEach(TextClipTransform.allCases) { transform in
                     Button {
-                        TextClipTransforms.apply(transform, to: item, context: context)
+                        // Non-destructive: put the transformed result on the clipboard (the monitor
+                        // captures it as a new clip). The original item is left untouched.
+                        guard let result = TextClipTransforms.transformedText(transform, for: item) else { return }
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(result, forType: .string)
                     } label: {
                         Text(transform.title)
                     }
                 }
             } label: {
-                Label("Transform", systemImage: "textformat")
+                Label("Transform & Copy", systemImage: "textformat")
             }
         }
     }

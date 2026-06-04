@@ -18,14 +18,19 @@ enum DuplicateDetectionService {
         return "text:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    static func textSimilarity(_ a: String, _ b: String) -> Double {
+    static func textSimilarity(_ a: String, _ b: String, threshold: Double = 0) -> Double {
         let na = normalizeForCompare(a)
         let nb = normalizeForCompare(b)
         guard !na.isEmpty, !nb.isEmpty else { return na == nb ? 1 : 0 }
         if na == nb { return 1 }
         let longer = max(na.count, nb.count)
+        let shorter = min(na.count, nb.count)
         guard longer > 0 else { return 0 }
-        let dist = levenshtein(na, nb)
+        // Length pre-filter: edit distance ≥ length delta, so very different lengths can't be similar.
+        if threshold > 0, Double(shorter) / Double(longer) < threshold { return 0 }
+        // Only compute as much distance as the threshold allows, then early-exit.
+        let maxDist = threshold > 0 ? Int((1 - threshold) * Double(longer)) + 1 : longer
+        let dist = levenshtein(Array(na), Array(nb), maxDistance: maxDist)
         return 1 - Double(dist) / Double(longer)
     }
 
@@ -35,7 +40,7 @@ enum DuplicateDetectionService {
         threshold: Double = 0.92
     ) {
         guard let text = item.textContent, text.count >= 20 else { return }
-        var desc = FetchDescriptor<ClipboardItem>()
+        var desc = FetchDescriptor<ClipboardItem>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         desc.fetchLimit = 200
         guard let candidates = try? context.fetch(desc) else { return }
 
@@ -43,7 +48,7 @@ enum DuplicateDetectionService {
             guard other.contentType == item.contentType,
                   other.contentHash != item.contentHash,
                   let otherText = other.textContent else { continue }
-            let sim = textSimilarity(text, otherText)
+            let sim = textSimilarity(text, otherText, threshold: threshold)
             if sim >= threshold {
                 let group = other.duplicateGroupID ?? other.id
                 item.duplicateGroupID = group
@@ -56,23 +61,33 @@ enum DuplicateDetectionService {
     }
 
     private static func normalizeForCompare(_ s: String) -> String {
-        s.lowercased()
+        let n = s.lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        // Cap the compared length so a pair of huge clips can't allocate a giant DP row.
+        return String(n.prefix(2000))
     }
 
-    private static func levenshtein(_ a: String, _ b: String) -> Int {
-        let aChars = Array(a)
-        let bChars = Array(b)
-        var dist = Array(repeating: Array(repeating: 0, count: bChars.count + 1), count: aChars.count + 1)
-        for i in 0...aChars.count { dist[i][0] = i }
-        for j in 0...bChars.count { dist[0][j] = j }
-        for i in 1...aChars.count {
-            for j in 1...bChars.count {
-                let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
-                dist[i][j] = min(dist[i - 1][j] + 1, dist[i][j - 1] + 1, dist[i - 1][j - 1] + cost)
+    /// Two-row Levenshtein with early exit once the best achievable distance exceeds `maxDistance`.
+    /// O(min(n,m)) memory instead of the full O(n·m) matrix.
+    private static func levenshtein(_ a: [Character], _ b: [Character], maxDistance: Int) -> Int {
+        let n = a.count, m = b.count
+        if abs(n - m) > maxDistance { return maxDistance + 1 }
+        if n == 0 { return m }
+        if m == 0 { return n }
+        var prev = Array(0...m)
+        var curr = [Int](repeating: 0, count: m + 1)
+        for i in 1...n {
+            curr[0] = i
+            var rowMin = curr[0]
+            for j in 1...m {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+                rowMin = min(rowMin, curr[j])
             }
+            if rowMin > maxDistance { return maxDistance + 1 }
+            swap(&prev, &curr)
         }
-        return dist[aChars.count][bChars.count]
+        return prev[m]
     }
 }

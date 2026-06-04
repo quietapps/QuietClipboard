@@ -23,17 +23,18 @@ enum ClipboardItemDelivery {
         priorApp: NSRunningApplication?,
         context: ModelContext,
         monitor: ClipboardMonitor,
-        method: PasteDeliveryMethod? = nil
+        method: PasteDeliveryMethod? = nil,
+        asPlainText: Bool = false
     ) {
         let delivery = method ?? Preferences.pasteDeliveryMethod
         switch delivery {
         case .standardPaste:
-            deliverWithPaste(item, priorApp: priorApp, context: context, monitor: monitor)
+            deliverWithPaste(item, priorApp: priorApp, context: context, monitor: monitor, asPlainText: asPlainText)
         case .autoType:
             if let text = PasteSimulator.plainText(from: item) {
                 deliverWithAutoType(text, item: item, priorApp: priorApp, context: context, monitor: monitor)
             } else {
-                deliverWithPaste(item, priorApp: priorApp, context: context, monitor: monitor)
+                deliverWithPaste(item, priorApp: priorApp, context: context, monitor: monitor, asPlainText: asPlainText)
             }
         }
     }
@@ -42,10 +43,24 @@ enum ClipboardItemDelivery {
         _ item: ClipboardItem,
         priorApp: NSRunningApplication?,
         context: ModelContext,
-        monitor: ClipboardMonitor
+        monitor: ClipboardMonitor,
+        asPlainText: Bool = false
     ) {
-        ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
-        PasteSimulator.performPaste(priorApp: priorApp)
+        // Snapshot the user's current clipboard BEFORE we overwrite it, so we can restore it after.
+        let priorArchive = Preferences.restoreClipboardAfterPaste
+            ? PasteboardHelper.archiveData(from: .general) : nil
+
+        if asPlainText {
+            ClipboardItemUsage.copyPlainTextToPasteboard(item, context: context, monitor: monitor)
+        } else {
+            ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+        }
+
+        PasteSimulator.performPaste(priorApp: priorApp) {
+            guard let priorArchive else { return }
+            _ = PasteboardHelper.restoreArchive(priorArchive, to: .general)
+            monitor.acknowledgeOwnPasteboardWrite()   // don't re-ingest the restored prior clipboard
+        }
     }
 
     static func deliverWithAutoType(

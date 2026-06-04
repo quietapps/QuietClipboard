@@ -3,6 +3,13 @@ import SwiftData
 import AppKit
 import UniformTypeIdentifiers
 
+/// Per-view cache for the Library's ranked search result (reference type so mutating it during a
+/// `body` read doesn't invalidate the view). Keyed by the inputs that change the result.
+private final class RankCache {
+    var key = ""
+    var value: [ClipboardItem] = []
+}
+
 struct LibraryWindow: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var coordinator: AppCoordinator
@@ -12,6 +19,7 @@ struct LibraryWindow: View {
     @Query(sort: \Category.sortOrder) private var categories: [Category]
 
     @State private var showNewCategorySheet = false
+    @State private var rankCache = RankCache()
 
     // MARK: – Filtering (preserved from original)
 
@@ -59,7 +67,16 @@ struct LibraryWindow: View {
 
         let q = state.search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
-            return ClipSearchMatcher.ranked(items, query: q)
+            // `filtered` is read several times per render; the ranked scan (bounded Levenshtein
+            // over the candidate pool) is the dominant cost. Cache it keyed by the inputs that
+            // affect the result so a single render — and repeated renders with the same query —
+            // recompute at most once.
+            let key = "\(q)|\(state.selection)|\(state.typeFilter?.rawValue ?? "")|\(state.appFilter ?? "")|\(allItems.count)|\(items.count)"
+            if rankCache.key == key { return rankCache.value }
+            let ranked = ClipSearchMatcher.ranked(items, query: q)
+            rankCache.key = key
+            rankCache.value = ranked
+            return ranked
         }
 
         switch state.sort {

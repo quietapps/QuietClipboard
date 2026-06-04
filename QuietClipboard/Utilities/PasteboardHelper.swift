@@ -82,9 +82,17 @@ enum PasteboardHelper {
         )
     }
 
-    /// Captures every data payload on the pasteboard for lossless restore.
+    /// Hard limit on a single archive — prevents `archiveData` from synchronously JSON-encoding
+    /// (with 33% base64 bloat) tens of megabytes on the main thread during paste, which used to
+    /// freeze the UI when the prior clipboard held a large image.
+    static let archiveByteCap = 2 * 1024 * 1024
+
+    /// Captures every data payload on the pasteboard for lossless restore. Returns nil if the
+    /// total payload exceeds `archiveByteCap` — restore is then silently skipped (much better
+    /// than a multi-second main-thread stall).
     static func archiveData(from pb: NSPasteboard = .general) -> Data? {
         var entries: [PasteboardArchive.Entry] = []
+        var total = 0
         let skip: Set<String> = [
             concealedType.rawValue,
             transientType.rawValue,
@@ -95,6 +103,8 @@ enum PasteboardHelper {
                 guard !skip.contains(type.rawValue), let data = pasteItem.data(forType: type), !data.isEmpty else {
                     continue
                 }
+                total += data.count
+                if total > archiveByteCap { return nil }
                 entries.append(PasteboardArchive.Entry(type: type.rawValue, data: data))
             }
         }
@@ -138,7 +148,7 @@ enum PasteboardHelper {
                 pb.setString(s, forType: .string)
             }
         case .image, .screenshot:
-            pb.setData(item.content, forType: .png)
+            writeImage(item.content, to: pb)
         case .file:
             if let s = item.textContent, let url = URL(string: s) {
                 pb.writeObjects([url as NSURL])
@@ -184,6 +194,31 @@ enum PasteboardHelper {
             return true
         }
         return false
+    }
+
+    /// Writes image bytes to the pasteboard. Fast path: if bytes are already PNG (signature
+    /// `89 50 4E 47`), write them as-is — no NSImage round-trip on the main thread. Slow path
+    /// only for legacy items that were mistagged as PNG while actually holding JPEG/TIFF bytes.
+    private static func writeImage(_ data: Data, to pb: NSPasteboard) {
+        if Self.isPNG(data) {
+            pb.setData(data, forType: .png)
+            return
+        }
+        guard let image = NSImage(data: data),
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else {
+            pb.setData(data, forType: .png)   // last resort: hand bytes through unchanged
+            return
+        }
+        if let png = rep.representation(using: .png, properties: [:]) {
+            pb.setData(png, forType: .png)
+        }
+        pb.setData(tiff, forType: .tiff)
+    }
+
+    private static func isPNG(_ data: Data) -> Bool {
+        guard data.count >= 8 else { return false }
+        return data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
     }
 
     private static func meaningfulPlainText(_ item: ClipboardItem) -> String? {

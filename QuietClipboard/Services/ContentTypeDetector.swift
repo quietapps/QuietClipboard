@@ -45,10 +45,16 @@ enum ContentTypeDetector {
 
     static func isURL(_ s: String) -> Bool {
         guard s.count <= 2048, !s.contains(" "), !s.contains("\n") else { return false }
-        guard s.lowercased().hasPrefix("http://") || s.lowercased().hasPrefix("https://") else {
-            return false
+        let lower = s.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://")
+            || lower.hasPrefix("mailto:") || lower.hasPrefix("ftp://") || lower.hasPrefix("ftps://") {
+            return URL(string: s) != nil
         }
-        return URL(string: s) != nil
+        // Bare domain like `www.example.com/path` — treat as a link.
+        if lower.hasPrefix("www."), s.contains(".") {
+            return URL(string: "https://" + s) != nil
+        }
+        return false
     }
 
     static func looksLikeMarkdown(_ s: String) -> Bool {
@@ -71,19 +77,33 @@ enum ContentTypeDetector {
 
     static func looksLikeCode(_ s: String) -> Bool {
         guard s.count <= 100_000 else { return false }
-        let signals = [
-            "func ", "def ", "class ", "import ", "const ", "let ", "var ",
-            "=>", "->", "public ", "private ", "fileprivate ", "fn ", "async ",
-            "#include", "package ", "interface ", "struct ", "enum ",
-            "return ", "println(", "console.log(", "printf("
-        ]
-        let lower = s
-        var hits = 0
-        for sig in signals where lower.contains(sig) { hits += 1 }
-        let braceCount = lower.filter { $0 == "{" || $0 == "}" }.count
-        let semicolons = lower.filter { $0 == ";" }.count
-        return hits >= 1 || braceCount >= 2 || semicolons >= 3
+        // Cheap O(n) structural counts over the whole string.
+        let braceCount = s.reduce(0) { $1 == "{" || $1 == "}" ? $0 + 1 : $0 }
+        let semicolons = s.reduce(0) { $1 == ";" ? $0 + 1 : $0 }
+        let parenCount = s.reduce(0) { $1 == "(" || $1 == ")" ? $0 + 1 : $0 }
+
+        // Keyword/operator patterns that rarely occur in ordinary prose. Word boundaries and a
+        // required assignment/call shape keep sentences like "Please let me import the file" out.
+        let head = s.count > 8000 ? String(s.prefix(8000)) : s
+        var strongHits = 0
+        for p in Self.codeSignalPatterns where head.range(of: p, options: .regularExpression) != nil {
+            strongHits += 1
+            if strongHits >= 2 { break }
+        }
+
+        if braceCount >= 4 && parenCount >= 2 { return true }
+        if strongHits >= 2 { return true }
+        if strongHits >= 1 && (braceCount >= 2 || semicolons >= 2) { return true }
+        return false
     }
+
+    private static let codeSignalPatterns: [String] = [
+        #"\bfunc\s+\w"#, #"\bdef\s+\w+\s*\("#, #"=>"#, #"->"#, #"#include"#, #"#import"#,
+        #"\bconsole\.log\("#, #"\bprintf\("#, #"\bprintln!?\("#, #"System\.out"#,
+        #"\bpublic\s+(class|func|static|void|final)"#, #"\b(const|let|var)\s+\w+\s*[:=]"#,
+        #"==="#, #"!=="#, #":="#, #"</\w+>"#, #"\}\s*else\s*\{"#, #"\bself\.\w"#,
+        #"\bfunction\s+\w"#, #"\breturn\s+\w.*;"#
+    ]
 
     static func title(for snap: PasteboardSnapshot, type: ClipboardContentType) -> String? {
         switch type {

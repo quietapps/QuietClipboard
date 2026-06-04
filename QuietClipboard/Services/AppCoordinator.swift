@@ -71,6 +71,11 @@ final class AppCoordinator: ObservableObject {
         DataMigrationService.migrateIfNeeded(container: container)
         pinned.pruneMissingItems(context: ModelContext(container))
         ExcludedAppsCatalog.seedDefaultsIfNeeded()
+        FrontmostAppTracker.shared.start()
+        PasteSimulator.onAccessibilityNeeded = { [weak self] in
+            // Fallback hook — paste-time AX revocation. Pre-paste gate above normally catches it.
+            self?.presentAccessibilityGateIfNeeded()
+        }
         monitor.start()
         retention.start()
         ShortcutManager.shared.onAction = { [weak self] action in
@@ -78,6 +83,12 @@ final class AppCoordinator: ObservableObject {
         }
         ShortcutManager.shared.install()
         presentOnboardingIfNeeded()
+        // If auto-paste is on but Accessibility hasn't been granted, present a blocking gate
+        // window after launch. Window polls AX every second and auto-dismisses when granted, so
+        // the user never hits a paste flow that silently fails or freezes the UI.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.presentAccessibilityGateIfNeeded()
+        }
         // Pre-build Quick Search panel so first open is instant.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.prebuildQuickSearch()
@@ -92,6 +103,7 @@ final class AppCoordinator: ObservableObject {
                 AnyView(
                     QuickSearchOverlay(
                         onPaste: { item in self?.pasteFromQuickSearch(item) },
+                        onPlainPaste: { item in self?.pasteFromQuickSearch(item, asPlainText: true) },
                         onDismiss: { self?.quickSearch?.hide() },
                         onOpenLibrary: {
                             self?.quickSearch?.hide()
@@ -133,6 +145,17 @@ final class AppCoordinator: ObservableObject {
         toggleQuickSearch()
     }
 
+    /// Opens the Quick Search overlay (used by the menu bar popover's search button).
+    func openQuickSearch() {
+        toggleQuickSearch()
+    }
+
+    /// Pastes a clip chosen from the menu bar popover into the previously-frontmost app.
+    func pasteFromMenuBar(_ item: ClipboardItem) {
+        let context = ModelContext(container)
+        pasteItem(item, context: context)
+    }
+
     private func handle(_ action: AppShortcutAction) {
         switch action {
         case .openQuickSearch:
@@ -156,16 +179,68 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func toggleQuickSearch() {
+        // AX is checked at launch; not re-checked here so opening stays instant. Paste-time guard
+        // in `pasteFromQuickSearch` handles late-revoked permission by falling back to copy-only.
         prebuildQuickSearch()
         quickSearch?.toggle()
     }
 
-    func pasteFromQuickSearch(_ item: ClipboardItem) {
+    /// Whether auto-paste-into-prior-app is the active mode (pref on AND Accessibility granted).
+    /// When false, clip selections only copy to the system clipboard.
+    private var canAutoPaste: Bool {
+        Preferences.autoPasteEnabled && AccessibilityPermissionHelper.isGranted
+    }
+
+    /// Presents the blocking Accessibility gate window when auto-paste is enabled but permission
+    /// is missing. Returns true if the gate was shown — callers should bail in that case.
+    @discardableResult
+    func presentAccessibilityGateIfNeeded() -> Bool {
+        guard Preferences.autoPasteEnabled else { return false }
+        return AccessibilityGate.presentIfNeeded(coordinator: self)
+    }
+
+    func pasteFromQuickSearch(_ item: ClipboardItem, asPlainText: Bool = false) {
         guard shouldProceedWithSensitiveAction(for: item) else { return }
         let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
         quickSearch?.hide()
         let context = ModelContext(container)
-        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor)
+
+        // Copy-only path: auto-paste disabled OR Accessibility missing. Skips the activate +
+        // synthesized ⌘V chain (which would silently no-op when AX is missing). User pastes
+        // with ⌘V manually. No prior-clipboard snapshot, no UI freeze.
+        guard canAutoPaste else {
+            // Auto-paste off OR AX missing: copy only, no paste chain. Avoids the hang.
+            if asPlainText {
+                ClipboardItemUsage.copyPlainTextToPasteboard(item, context: context, monitor: monitor)
+            } else {
+                ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+            }
+            if Preferences.autoPasteEnabled {
+                // AX missing while auto-paste expected — present the gate (clip is on clipboard).
+                presentAccessibilityGateIfNeeded()
+            } else {
+                showCopiedHUD()
+            }
+            return
+        }
+
+        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor, asPlainText: asPlainText)
+        showPasteHUD()
+    }
+
+    private func showPasteHUD() {
+        guard Preferences.showPasteFeedbackHUD else { return }
+        FeedbackHUD.shared.show("Pasted", systemImage: "checkmark.circle.fill", duration: 0.85)
+    }
+
+    private func showCopiedHUD() {
+        guard Preferences.showPasteFeedbackHUD else { return }
+        FeedbackHUD.shared.show("Copied — press ⌘V to paste", systemImage: "doc.on.clipboard.fill", duration: 1.1)
+    }
+
+    /// Strips formatting and pastes the plain-text form into the prior app.
+    func pastePlainText(_ item: ClipboardItem) {
+        pasteFromQuickSearch(item, asPlainText: true)
     }
 
     func typeFromQuickSearch(_ item: ClipboardItem) {
@@ -186,7 +261,11 @@ final class AppCoordinator: ObservableObject {
 
     private func pasteIndex(_ index: Int) {
         let context = ModelContext(container)
-        let items = ((try? context.fetch(FetchDescriptor<ClipboardItem>())) ?? [])
+        // Bound the fetch — paste-by-index only needs the few most-recent clips, not the whole
+        // history materialized (which would fault every clip's content blob).
+        var desc = FetchDescriptor<ClipboardItem>(sortBy: [SortDescriptor(\.lastCopiedAt, order: .reverse)])
+        desc.fetchLimit = 60
+        let items = ((try? context.fetch(desc)) ?? [])
             .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
         guard index < items.count else { return }
         pasteItem(items[index], context: context)
@@ -198,10 +277,24 @@ final class AppCoordinator: ObservableObject {
         pasteItem(item, context: context)
     }
 
-    private func pasteItem(_ item: ClipboardItem, context: ModelContext) {
+    private func pasteItem(_ item: ClipboardItem, context: ModelContext, asPlainText: Bool = false) {
         guard shouldProceedWithSensitiveAction(for: item) else { return }
         let prior = PasteSimulator.capturedFrontmost()
-        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor)
+        guard canAutoPaste else {
+            if asPlainText {
+                ClipboardItemUsage.copyPlainTextToPasteboard(item, context: context, monitor: monitor)
+            } else {
+                ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+            }
+            if Preferences.autoPasteEnabled {
+                presentAccessibilityGateIfNeeded()
+            } else {
+                showCopiedHUD()
+            }
+            return
+        }
+        ClipboardItemDelivery.deliver(item, priorApp: prior, context: context, monitor: monitor, asPlainText: asPlainText)
+        showPasteHUD()
     }
 
     func typeItem(_ item: ClipboardItem) {
