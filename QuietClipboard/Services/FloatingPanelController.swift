@@ -14,6 +14,7 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
     private(set) var priorApp: NSRunningApplication?
     private var globalMouseMonitor: Any?
     private var appResignObserver: Any?
+    var onWillShow: (() -> Void)?
 
     init(width: CGFloat, height: CGFloat, minWidth: CGFloat = 520, minHeight: CGFloat = 320, @ViewBuilder content: @escaping () -> Content) {
         self.defaultSize = NSSize(width: width, height: height)
@@ -35,12 +36,18 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
         }
     }
 
+    func prebuild() {
+        if panel == nil { build() }
+    }
+
     func show() {
         if panel == nil { build() }
         priorApp = NSWorkspace.shared.frontmostApplication
+        // Activate early so macOS processes the app-switch in parallel with our setup.
+        NSApp.activate(ignoringOtherApps: true)
         guard let panel else { return }
         positionPanel(panel)
-        NSApp.activate(ignoringOtherApps: true)
+        onWillShow?()
         panel.makeKeyAndOrderFront(nil)
         installDismissMonitors()
     }
@@ -54,10 +61,7 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
             }
         }
         panel?.orderOut(nil)
-        panel?.contentViewController = nil
-        panel?.contentView = nil
-        panel?.delegate = nil
-        panel = nil
+        // Panel kept alive for instant reopen — no rebuild overhead on next show.
     }
 
     func resetSize() {

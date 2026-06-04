@@ -92,7 +92,7 @@ struct PopupClipCard: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
             } else {
-                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true)
+                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true, colorHexBottomInset: 54)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 

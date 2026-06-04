@@ -119,6 +119,41 @@ struct LibraryWindow: View {
         if state.selectedItemID == item.id {
             state.selectedItemID = nil
         }
+        state.pasteQueueIDs.remove(item.id)
+    }
+
+    private func handleItemTap(_ item: ClipboardItem) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift) {
+            state.extendQueueRange(to: item.id, in: filtered)
+            return
+        }
+        if flags.contains(.command) {
+            state.toggleQueue(item.id)
+            return
+        }
+        withAnimation(.spring(duration: 0.22, bounce: 0.08)) {
+            if state.selectedItemID == item.id {
+                state.selectedItemID = nil
+            } else {
+                state.selectedItemID = item.id
+            }
+        }
+    }
+
+    private func pasteQueue() {
+        let items = state.orderedQueueItems(in: filtered)
+        guard items.count >= 2 else { return }
+        let delimiter = Preferences.multiPasteDelimiter.separatorString()
+        let prior = PasteSimulator.capturedFrontmost()
+        MultiPasteService.deliver(
+            items: items,
+            delimiter: delimiter,
+            priorApp: prior,
+            context: context,
+            monitor: monitor,
+            sensitiveGate: { coordinator.shouldProceedWithSensitiveAction(for: $0) }
+        )
     }
 
     private func toggleFavorite(_ item: ClipboardItem) {
@@ -158,7 +193,8 @@ struct LibraryWindow: View {
             )
             Divider()
 
-            ZStack(alignment: .trailing) {
+            ZStack(alignment: .bottom) {
+                ZStack(alignment: .trailing) {
                 // Grid area — always full width
                 Group {
                     if filtered.isEmpty {
@@ -166,18 +202,23 @@ struct LibraryWindow: View {
                     } else if state.view == .timeline || state.selection == .timeline {
                         ClipboardTimelineView(
                             items: filtered,
+                            libraryState: state,
                             selectedID: $state.selectedItemID,
-                            onActivate: copyFromLibrary
+                            onActivate: copyFromLibrary,
+                            onItemTap: handleItemTap
                         )
                     } else if state.view == .grid {
                         libraryGrid
                     } else {
                         ClipboardItemList(
                             sections: displaySections,
+                            items: filtered,
+                            libraryState: state,
                             selectedID: $state.selectedItemID,
                             expandedGroups: $state.expandedDuplicateGroups,
                             expandedCopyHistories: $state.expandedCopyHistories,
-                            onActivate: copyFromLibrary
+                            onActivate: copyFromLibrary,
+                            onItemTap: handleItemTap
                         )
                     }
                 }
@@ -204,11 +245,25 @@ struct LibraryWindow: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                     .zIndex(10)
                 }
+                }
+
+                if state.pasteQueueCount > 0 {
+                    LibraryPasteQueueBar(
+                        state: state,
+                        orderedItems: state.orderedQueueItems(in: filtered),
+                        onPaste: pasteQueue,
+                        onClear: { state.clearPasteQueue() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(20)
+                }
             }
         }
         .background(.black)
         .frame(minWidth: 840, minHeight: 560)
         .animation(.spring(duration: 0.22, bounce: 0.08), value: state.selectedItemID)
+        .animation(.spring(duration: 0.28, bounce: 0.1), value: state.pasteQueueCount)
+        .environmentObject(state)
         .onAppear {
             state.groupBy = Preferences.libraryGroupBy
         }
@@ -218,8 +273,8 @@ struct LibraryWindow: View {
             } else if state.view == .timeline {
                 state.view = .grid
             }
-            // Clear detail panel when switching tabs
             state.selectedItemID = nil
+            state.clearPasteQueue()
         }
         .sheet(isPresented: $showNewCategorySheet) {
             LibraryNewCategorySheet { name, icon, color in
@@ -247,15 +302,9 @@ struct LibraryWindow: View {
                     LibraryCard(
                         item: item,
                         isSelected: item.id == state.selectedItemID,
-                        onTap: {
-                            withAnimation(.spring(duration: 0.22, bounce: 0.08)) {
-                                if state.selectedItemID == item.id {
-                                    state.selectedItemID = nil
-                                } else {
-                                    state.selectedItemID = item.id
-                                }
-                            }
-                        },
+                        isQueued: state.isQueued(item.id),
+                        queuePosition: state.queuePosition(for: item.id, in: filtered),
+                        onTap: { handleItemTap(item) },
                         onCopy: { copyFromLibrary(item) },
                         onFavorite: { toggleFavorite(item) },
                         onDelete: { deleteItem(item) }
@@ -263,6 +312,7 @@ struct LibraryWindow: View {
                 }
             }
             .padding(16)
+            .padding(.bottom, state.pasteQueueCount > 0 ? 64 : 0)
             .background(
                 Color.clear
                     .contentShape(Rectangle())

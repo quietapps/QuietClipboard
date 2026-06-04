@@ -33,6 +33,7 @@ struct AppSettingsView: View {
                         .environmentObject(coordinator)
                 case .about:
                     AboutSettingsPanel()
+                        .environmentObject(coordinator)
                 }
             }
         }
@@ -42,6 +43,16 @@ struct AppSettingsView: View {
         .fixedSize(horizontal: true, vertical: false)
         .background(SettingsChrome.shellBackground)
         .background(SettingsWindowConfigurator())
+        .onAppear { applyPendingSettingsPanel() }
+        .onChange(of: coordinator.pendingSettingsPanel) { _, _ in
+            applyPendingSettingsPanel()
+        }
+    }
+
+    private func applyPendingSettingsPanel() {
+        guard let target = coordinator.pendingSettingsPanel else { return }
+        panel = target
+        coordinator.pendingSettingsPanel = nil
     }
 }
 
@@ -230,6 +241,27 @@ private struct QuickSearchSettingsPanel: View {
                     }
                 }
 
+                if Preferences.quickSearchPlacement == .screenCenterChosen {
+                    SettingsInsetDivider()
+                    SettingsPickerRow(
+                        title: "Display",
+                        icon: "display",
+                        iconTint: .gray,
+                        selection: Binding<CGDirectDisplayID>(
+                            get: { Preferences.quickSearchDisplayID ?? primaryDisplayID() },
+                            set: {
+                                Preferences.quickSearchDisplayID = $0
+                                coordinator.objectWillChange.send()
+                            }
+                        )
+                    ) {
+                        ForEach(NSScreen.screens, id: \.self) { s in
+                            let id = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+                            Text(s.localizedName).tag(CGDirectDisplayID(id))
+                        }
+                    }
+                }
+
                 SettingsInsetDivider()
 
                 SettingsToggleRow(
@@ -255,26 +287,6 @@ private struct QuickSearchSettingsPanel: View {
                 .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
                 .padding(.vertical, 10)
 
-                if Preferences.quickSearchPlacement == .screenCenterChosen {
-                    SettingsInsetDivider()
-                    SettingsPickerRow(
-                        title: "Display",
-                        icon: "display",
-                        iconTint: .gray,
-                        selection: Binding<CGDirectDisplayID>(
-                            get: { Preferences.quickSearchDisplayID ?? primaryDisplayID() },
-                            set: {
-                                Preferences.quickSearchDisplayID = $0
-                                coordinator.objectWillChange.send()
-                            }
-                        )
-                    ) {
-                        ForEach(NSScreen.screens, id: \.self) { s in
-                            let id = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-                            Text(s.localizedName).tag(CGDirectDisplayID(id))
-                        }
-                    }
-                }
             }
 
             SettingsCard(
@@ -363,6 +375,8 @@ private struct QuickSearchSettingsPanel: View {
 // MARK: - About
 
 private struct AboutSettingsPanel: View {
+    @EnvironmentObject private var coordinator: AppCoordinator
+
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     }
@@ -408,6 +422,18 @@ private struct AboutSettingsPanel: View {
                     .foregroundStyle(SettingsChrome.secondaryText)
                     .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
                     .padding(.vertical, 12)
+            }
+
+            SettingsCard(title: "Help") {
+                Button("Show Welcome Tour…") {
+                    coordinator.presentOnboarding(force: true)
+                }
+                .buttonStyle(.plain)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(SettingsChrome.accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SettingsChrome.rowHorizontalPadding)
+                .padding(.vertical, 12)
             }
         }
     }

@@ -60,7 +60,6 @@ enum SettingsChrome {
     static let groupedBackground = Color.white.opacity(0.06)
     static let groupedStroke = Color.white.opacity(0.08)
     static let panelStroke = Color.white.opacity(0.08)
-    static let tabSelectedFill = Color.white.opacity(0.12)
     static let footerBackground = Color(red: 0.08, green: 0.08, blue: 0.08)
     static let divider = Color.white.opacity(0.08)
     static let primaryText = Color.white
@@ -93,8 +92,7 @@ enum SettingsChrome {
     static let tabIconSize: CGFloat = 16
     static let tabLabelSize: CGFloat = 11
     static let tabLabelSpacing: CGFloat = 4
-    static let tabPillCornerRadius: CGFloat = 7
-    /// Same highlight size for every tab (longest label is "General" / "Capture" / "Storage").
+    /// Uniform tap target for each tab (selection shown via accent color only).
     static let tabPillWidth: CGFloat = 56
     static let tabPillHeight: CGFloat = 38
     static let shellTopInset: CGFloat = 14
@@ -207,7 +205,6 @@ struct SettingsTabBar: View {
 
     private func tabButton(_ panel: SettingsPanel) -> some View {
         let isActive = selection == panel
-        let pillShape = RoundedRectangle(cornerRadius: SettingsChrome.tabPillCornerRadius, style: .continuous)
         return Button {
             selection = panel
         } label: {
@@ -227,8 +224,6 @@ struct SettingsTabBar: View {
                     height: SettingsChrome.tabPillHeight,
                     alignment: .center
                 )
-                .background(pillShape.fill(isActive ? SettingsChrome.tabSelectedFill : Color.clear))
-                .contentShape(pillShape)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)

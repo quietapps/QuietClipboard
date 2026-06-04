@@ -10,6 +10,8 @@ final class AppCoordinator: ObservableObject {
     let retention: RetentionManager
     @Published var shortcutSettings: ShortcutSettings
     @Published var isPaused: Bool = false
+    @Published var pendingSettingsPanel: SettingsPanel?
+    @Published private(set) var quickSearchShowCount: Int = 0
     @Published private(set) var revealedSensitiveIDs: Set<UUID> = []
     let pinned = PinnedClipStore.shared
 
@@ -75,6 +77,60 @@ final class AppCoordinator: ObservableObject {
             self?.handle(action)
         }
         ShortcutManager.shared.install()
+        presentOnboardingIfNeeded()
+        // Pre-build Quick Search panel so first open is instant.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.prebuildQuickSearch()
+        }
+    }
+
+    private func prebuildQuickSearch() {
+        if quickSearch == nil {
+            let container = self.container
+            let coord = self
+            let controller = FloatingPanelController(width: 1060, height: 480) { [weak self] in
+                AnyView(
+                    QuickSearchOverlay(
+                        onPaste: { item in self?.pasteFromQuickSearch(item) },
+                        onDismiss: { self?.quickSearch?.hide() },
+                        onOpenLibrary: {
+                            self?.quickSearch?.hide()
+                            self?.openLibraryWindow()
+                        },
+                        onTogglePause: { self?.monitor.setPaused(!(self?.monitor.isPaused ?? false)) },
+                        onQuit: { NSApp.terminate(nil) }
+                    )
+                    .environmentObject(coord)
+                    .environmentObject(coord.monitor)
+                    .modelContainer(container)
+                )
+            }
+            controller.onWillShow = { [weak self] in
+                self?.quickSearchShowCount += 1
+            }
+            quickSearch = controller
+        }
+        quickSearch?.prebuild()
+    }
+
+    func presentOnboarding(force: Bool = false) {
+        OnboardingWindowPresenter.shared.present(coordinator: self, force: force)
+    }
+
+    func presentOnboardingIfNeeded() {
+        guard !Preferences.hasCompletedOnboarding else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.presentOnboarding()
+        }
+    }
+
+    func openSettings(panel: SettingsPanel) {
+        pendingSettingsPanel = panel
+        openSettings?()
+    }
+
+    func toggleQuickSearchForOnboarding() {
+        toggleQuickSearch()
     }
 
     private func handle(_ action: AppShortcutAction) {
@@ -100,27 +156,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func toggleQuickSearch() {
-        if quickSearch == nil {
-            let container = self.container
-            let coord = self
-            quickSearch = FloatingPanelController(width: 1060, height: 480) { [weak self] in
-                AnyView(
-                    QuickSearchOverlay(
-                        onPaste: { item in self?.pasteFromQuickSearch(item) },
-                        onDismiss: { self?.quickSearch?.hide() },
-                        onOpenLibrary: {
-                            self?.quickSearch?.hide()
-                            self?.openLibraryWindow()
-                        },
-                        onTogglePause: { self?.monitor.setPaused(!(self?.monitor.isPaused ?? false)) },
-                        onQuit: { NSApp.terminate(nil) }
-                    )
-                    .environmentObject(coord)
-                    .environmentObject(coord.monitor)
-                    .modelContainer(container)
-                )
-            }
-        }
+        prebuildQuickSearch()
         quickSearch?.toggle()
     }
 

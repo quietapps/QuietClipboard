@@ -95,10 +95,13 @@ struct ClipboardItemGrid: View {
 
 struct ClipboardItemList: View {
     let sections: [LibrarySection]
+    let items: [ClipboardItem]
+    @ObservedObject var libraryState: LibraryState
     @Binding var selectedID: UUID?
     @Binding var expandedGroups: Set<String>
     @Binding var expandedCopyHistories: Set<UUID>
     var onActivate: (ClipboardItem) -> Void
+    var onItemTap: (ClipboardItem) -> Void
 
     var body: some View {
         ScrollView {
@@ -137,15 +140,15 @@ struct ClipboardItemList: View {
         ClipboardItemRow(
             item: item,
             isSelected: item.id == selectedID,
+            isQueued: libraryState.isQueued(item.id),
+            queuePosition: libraryState.queuePosition(for: item.id, in: items),
             isCopyHistoryExpanded: expandedCopyHistories.contains(item.id),
             onToggleCopyHistory: item.effectiveCopyCount > 1
                 ? { toggleCopyHistory(for: item.id) }
                 : nil
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            if selectedID == item.id { onActivate(item) } else { selectedID = item.id }
-        }
+        .onTapGesture { onItemTap(item) }
         .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate(item) })
         .contextMenu { ItemContextMenu(item: item) }
         .pointerCursor()
@@ -174,6 +177,7 @@ struct ItemContextMenu: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var coordinator: AppCoordinator
     @EnvironmentObject private var monitor: ClipboardMonitor
+    @EnvironmentObject private var libraryState: LibraryState
     let item: ClipboardItem
 
     private var isRedacted: Bool {
@@ -197,6 +201,20 @@ struct ItemContextMenu: View {
         }
 
         TextTransformMenu(item: item)
+
+        if libraryState.isQueued(item.id) {
+            Button {
+                libraryState.toggleQueue(item.id)
+            } label: {
+                Label("Remove from Paste Queue", systemImage: "minus.circle")
+            }
+        } else {
+            Button {
+                libraryState.toggleQueue(item.id)
+            } label: {
+                Label("Add to Paste Queue", systemImage: "plus.circle")
+            }
+        }
 
         Button {
             item.isFavorite.toggle()

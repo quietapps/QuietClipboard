@@ -259,6 +259,25 @@ enum Preferences {
         set { defaults.set(newValue.rawValue, forKey: "QC.LibraryGroupBy") }
     }
 
+    @MainActor static var hasCompletedOnboarding: Bool {
+        get { defaults.bool(forKey: "QC.OnboardingCompleted") }
+        set { defaults.set(newValue, forKey: "QC.OnboardingCompleted") }
+    }
+
+    @MainActor static var multiPasteDelimiter: MultiPasteDelimiter {
+        get {
+            guard let raw = defaults.string(forKey: "QC.MultiPasteDelimiter"),
+                  let v = MultiPasteDelimiter(rawValue: raw) else { return .newline }
+            return v
+        }
+        set { defaults.set(newValue.rawValue, forKey: "QC.MultiPasteDelimiter") }
+    }
+
+    @MainActor static var multiPasteCustomDelimiter: String {
+        get { defaults.string(forKey: "QC.MultiPasteCustomDelimiter") ?? "\n\n" }
+        set { defaults.set(newValue, forKey: "QC.MultiPasteCustomDelimiter") }
+    }
+
     @MainActor static var quickSearchLastOrigin: CGPoint? {
         get {
             guard let s = defaults.string(forKey: "QC.QSLastOrigin") else { return nil }

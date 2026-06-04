@@ -10,6 +10,8 @@ struct ClipboardItemPreview: View {
     var fillImages: Bool = true
     /// Background color for letterbox areas. Defaults to system control background.
     var backgroundColor: Color = Color(nsColor: .controlBackgroundColor)
+    /// Extra bottom clearance for the color hex label so it doesn't overlap a card footer.
+    var colorHexBottomInset: CGFloat = 0
 
     var body: some View {
         SensitiveContentGate(item: item, compact: compactRedaction) {
@@ -49,14 +51,16 @@ struct ClipboardItemPreview: View {
                     placeholder
                 }
             case .color:
-                if let hex = item.colorHex ?? item.textContent, let color = Color(hex: hex) {
+                if let colorSource = item.colorHex ?? item.textContent, let color = Color(hex: colorSource) {
                     ZStack(alignment: .bottomLeading) {
                         color
-                        Text(hex)
+                        // Show original copied text; fall back to colorHex only if no textContent
+                        Text(item.textContent ?? colorSource)
                             .font(.system(largeIcons ? .body : .caption2, design: .monospaced).weight(.semibold))
                             .foregroundStyle(.white.opacity(0.9))
                             .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
                             .padding(largeIcons ? 12 : 6)
+                            .padding(.bottom, colorHexBottomInset)
                     }
                 } else {
                     placeholder
@@ -93,18 +97,18 @@ struct ClipboardItemPreview: View {
 
     @ViewBuilder
     private var richTextPreview: some View {
-        if let attr = RichContentRenderer.appearanceAdaptedPreview(for: item), attr.length > 0 {
+        if largeIcons, let attr = RichContentRenderer.appearanceAdaptedPreview(for: item), attr.length > 0 {
             AttributedTextPreview(attributedString: attr)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            let summary = item.displaySummary
-            if summary != "Untitled", summary != "Rich text", summary != "Clipboard content" {
-            Text(summary)
-                .font(.system(largeIcons ? .callout : .caption))
-                .lineLimit(largeIcons ? nil : 4)
-                .multilineTextAlignment(.leading)
-                .padding(8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            let summary = item.resolvedText ?? item.displaySummary
+            if !summary.isEmpty, summary != "Untitled", summary != "Rich text", summary != "Clipboard content" {
+                Text(summary)
+                    .font(.system(largeIcons ? .callout : .caption))
+                    .lineLimit(largeIcons ? nil : 4)
+                    .multilineTextAlignment(.leading)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 styledContentPlaceholder
             }

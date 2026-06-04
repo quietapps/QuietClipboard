@@ -3,8 +3,10 @@ import SwiftData
 
 struct ClipboardTimelineView: View {
     let items: [ClipboardItem]
+    @ObservedObject var libraryState: LibraryState
     @Binding var selectedID: UUID?
     var onActivate: (ClipboardItem) -> Void
+    var onItemTap: (ClipboardItem) -> Void
 
     @State private var selectedDay: Date = Calendar.current.startOfDay(for: .now)
 
@@ -98,12 +100,12 @@ struct ClipboardTimelineView: View {
     }
 
     private func timelineRow(_ entry: TimelineEntry) -> some View {
-        Button {
-            if selectedID == entry.item.id {
-                onActivate(entry.item)
-            } else {
-                selectedID = entry.item.id
-            }
+        let item = entry.item
+        let queued = libraryState.isQueued(item.id)
+        let position = libraryState.queuePosition(for: item.id, in: items)
+
+        return Button {
+            onItemTap(item)
         } label: {
             HStack(spacing: 10) {
                 ClipRowLeadingAccessory(item: entry.item, richSize: CGSize(width: 44, height: 44))
@@ -134,11 +136,28 @@ struct ClipboardTimelineView: View {
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(selectedID == entry.item.id ? Color.accentColor.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+                    .fill(timelineRowBackground(selected: selectedID == item.id, queued: queued))
             )
+            .overlay(alignment: .leading) {
+                if queued, let position {
+                    Text("\(position)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Color(red: 0.2, green: 0.72, blue: 0.45), in: Circle())
+                        .offset(x: -4)
+                }
+            }
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture(count: 2).onEnded { onActivate(item) })
         .pointerCursor()
+    }
+
+    private func timelineRowBackground(selected: Bool, queued: Bool) -> Color {
+        if selected { return Color.accentColor.opacity(0.15) }
+        if queued { return Color(red: 0.2, green: 0.72, blue: 0.45).opacity(0.12) }
+        return Color(nsColor: .controlBackgroundColor)
     }
 }
 

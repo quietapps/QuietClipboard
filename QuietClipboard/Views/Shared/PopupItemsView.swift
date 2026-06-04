@@ -5,6 +5,7 @@ struct PopupItemsView: View {
     let viewMode: PopupViewMode
     var selectedIndex: Int?
     var keyboardTick: Int = 0
+    var scrollResetToken: Int = 0
     let onActivate: (ClipboardItem) -> Void
     let onTogglePin: (ClipboardItem) -> Void
     let onDelete: (ClipboardItem) -> Void
@@ -27,6 +28,7 @@ struct PopupItemsView: View {
                     gridBody
                 }
             }
+            .id(scrollResetToken)
             .onChange(of: keyboardTick) { _, _ in
                 scrollSelection(into: proxy)
             }

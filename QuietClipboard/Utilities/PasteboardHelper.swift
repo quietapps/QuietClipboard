@@ -40,12 +40,14 @@ enum PasteboardHelper {
 
     static func snapshot(_ pb: NSPasteboard = .general) -> PasteboardSnapshot {
         let types = pb.types ?? []
-        let string = pb.string(forType: .string)
-        let rtf = pb.data(forType: .rtf)
-        let rtfd = pb.data(forType: .rtfd)
-        let png = pb.data(forType: .png)
-        let tiff = pb.data(forType: .tiff)
-        let html = pb.string(forType: .html)
+        // Guard each read with a type-presence check to avoid unnecessary IPC.
+        // Skip tiff if png is present — both represent the same image but png is smaller.
+        let string = types.contains(.string) ? pb.string(forType: .string) : nil
+        let rtf    = types.contains(.rtf)    ? pb.data(forType: .rtf)      : nil
+        let rtfd   = types.contains(.rtfd)   ? pb.data(forType: .rtfd)     : nil
+        let png    = types.contains(.png)    ? pb.data(forType: .png)      : nil
+        let tiff   = png == nil && types.contains(.tiff) ? pb.data(forType: .tiff) : nil
+        let html   = types.contains(.html)   ? pb.string(forType: .html)   : nil
 
         var files: [URL] = []
         if let items = pb.pasteboardItems {

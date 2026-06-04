@@ -74,12 +74,10 @@ struct QuickSearchOverlay: View {
         )
         .animation(.easeInOut(duration: 0.15), value: typeFilter)
         .onAppear {
-            selectedIndex = 0
-            previewEnabled = Preferences.quickSearchPreviewEnabled
-            previewWidth = Preferences.quickSearchPreviewWidth
-            popupViewMode = Preferences.popupViewMode
-            sanitizeActiveFilters()
-            refreshDisplayItems()
+            resetState()
+        }
+        .onChange(of: coordinator.quickSearchShowCount) { _, _ in
+            resetState()
         }
         .onChange(of: popupViewMode) { _, new in
             Preferences.popupViewMode = new
@@ -97,7 +95,7 @@ struct QuickSearchOverlay: View {
             sanitizeActiveFilters()
             scheduleFilterRefresh()
         }
-        .task {
+        .task(id: coordinator.quickSearchShowCount) {
             try? await Task.sleep(nanoseconds: 60_000_000)
             searchFocused = true
         }
@@ -149,6 +147,7 @@ struct QuickSearchOverlay: View {
                     viewMode: popupViewMode,
                     selectedIndex: selectedIndex,
                     keyboardTick: keyboardTick,
+                    scrollResetToken: coordinator.quickSearchShowCount,
                     onActivate: { onPaste($0) },
                     onTogglePin: { togglePin($0) },
                     onDelete: { deleteItem($0) },
@@ -169,7 +168,7 @@ struct QuickSearchOverlay: View {
     private var filterBar: some View {
         let enabled = QuickSearchFilterPreferences.enabledFilters
         let showCategories = QuickSearchFilterPreferences.showUserCategories
-        return HorizontalScrollBar(barHeight: 34, showsHorizontalScroller: true) {
+        return HorizontalScrollBar(barHeight: 34, showsHorizontalScroller: false) {
             HStack(spacing: 6) {
                 FilterChip(label: "All", systemImage: "tray",
                            isSelected: typeFilter == nil && !favoritesOnly && !pinnedOnly && categoryFilter == nil) {
@@ -231,6 +230,20 @@ struct QuickSearchOverlay: View {
         .frame(maxWidth: .infinity)
         .frame(height: 34)
         .clipped()
+    }
+
+    private func resetState() {
+        search = ""
+        typeFilter = nil
+        favoritesOnly = false
+        pinnedOnly = false
+        categoryFilter = nil
+        selectedIndex = 0
+        previewEnabled = Preferences.quickSearchPreviewEnabled
+        previewWidth = Preferences.quickSearchPreviewWidth
+        popupViewMode = Preferences.popupViewMode
+        sanitizeActiveFilters()
+        refreshDisplayItems()
     }
 
     private func sanitizeActiveFilters() {

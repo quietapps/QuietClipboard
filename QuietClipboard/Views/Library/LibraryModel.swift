@@ -54,4 +54,56 @@ final class LibraryState: ObservableObject {
     @Published var expandedCopyHistories: Set<UUID> = []
     @Published var showTypeFilterBar: Bool = false
     @Published var showAppFilterBar: Bool = false
+
+    /// Multi-paste queue (⌘-click / ⇧-click). Paste order follows the current filtered list.
+    @Published var pasteQueueIDs: Set<UUID> = []
+    @Published private(set) var queueAnchorID: UUID?
+
+    var pasteQueueCount: Int { pasteQueueIDs.count }
+
+    func isQueued(_ id: UUID) -> Bool { pasteQueueIDs.contains(id) }
+
+    func queuePosition(for id: UUID, in items: [ClipboardItem]) -> Int? {
+        guard pasteQueueIDs.contains(id) else { return nil }
+        let ordered = orderedQueueItems(in: items)
+        guard let idx = ordered.firstIndex(where: { $0.id == id }) else { return nil }
+        return idx + 1
+    }
+
+    func orderedQueueItems(in items: [ClipboardItem]) -> [ClipboardItem] {
+        items.filter { pasteQueueIDs.contains($0.id) }
+    }
+
+    func toggleQueue(_ id: UUID) {
+        if pasteQueueIDs.contains(id) {
+            pasteQueueIDs.remove(id)
+        } else {
+            pasteQueueIDs.insert(id)
+        }
+        queueAnchorID = id
+    }
+
+    func extendQueueRange(to id: UUID, in items: [ClipboardItem]) {
+        let anchor = queueAnchorID
+            ?? items.first(where: { pasteQueueIDs.contains($0.id) })?.id
+            ?? id
+
+        guard let anchorIdx = items.firstIndex(where: { $0.id == anchor }),
+              let targetIdx = items.firstIndex(where: { $0.id == id }) else {
+            toggleQueue(id)
+            return
+        }
+
+        let lower = min(anchorIdx, targetIdx)
+        let upper = max(anchorIdx, targetIdx)
+        for idx in lower...upper {
+            pasteQueueIDs.insert(items[idx].id)
+        }
+        queueAnchorID = id
+    }
+
+    func clearPasteQueue() {
+        pasteQueueIDs = []
+        queueAnchorID = nil
+    }
 }

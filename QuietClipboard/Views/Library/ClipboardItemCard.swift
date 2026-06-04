@@ -167,6 +167,8 @@ struct LibraryCard: View {
 
     let item: ClipboardItem
     let isSelected: Bool
+    var isQueued: Bool = false
+    var queuePosition: Int? = nil
     var onTap: () -> Void
     var onCopy: () -> Void
     var onFavorite: () -> Void
@@ -180,6 +182,13 @@ struct LibraryCard: View {
         case .text, .richText, .code, .other: return true
         default: return false
         }
+    }
+
+    private var queueStrokeColor: Color {
+        if isSelected { return Color.accentColor }
+        if isQueued { return Color(red: 0.2, green: 0.72, blue: 0.45) }
+        if isHovered && !isDragging { return Color.white.opacity(0.3) }
+        return .clear
     }
 
     var body: some View {
@@ -207,7 +216,7 @@ struct LibraryCard: View {
                 }
                 .opacity(isDragging ? 0.4 : 1)
             } else {
-                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true)
+                ClipboardItemPreview(item: item, compactRedaction: true, largeIcons: true, colorHexBottomInset: 54)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isDragging ? 0.4 : 1)
             }
@@ -251,6 +260,22 @@ struct LibraryCard: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 6)
                 }
+            }
+
+            if isQueued, let queuePosition {
+                VStack {
+                    HStack {
+                        Text("\(queuePosition)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color(red: 0.2, green: 0.72, blue: 0.45), in: Circle())
+                            .padding(8)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
             }
 
             // Hover action buttons
@@ -307,8 +332,8 @@ struct LibraryCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(
-                    isSelected ? Color.accentColor : (isHovered && !isDragging ? Color.white.opacity(0.3) : Color.clear),
-                    lineWidth: isSelected ? 2 : 1
+                    queueStrokeColor,
+                    lineWidth: isSelected || isQueued ? 2 : 1
                 )
         )
         .overlay(
@@ -384,6 +409,8 @@ struct ClipboardItemRow: View {
     @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
+    var isQueued: Bool = false
+    var queuePosition: Int? = nil
     var isCopyHistoryExpanded: Bool = false
     var onToggleCopyHistory: (() -> Void)?
 
@@ -438,7 +465,23 @@ struct ClipboardItemRow: View {
         .padding(.vertical, clipPreviewStyle == .compact ? 4 : 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(rowBackground)
         )
+        .overlay(alignment: .leading) {
+            if isQueued, let queuePosition {
+                Text("\(queuePosition)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: 18, height: 18)
+                    .background(Color(red: 0.2, green: 0.72, blue: 0.45), in: Circle())
+                    .offset(x: -4)
+            }
+        }
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.15) }
+        if isQueued { return Color(red: 0.2, green: 0.72, blue: 0.45).opacity(0.12) }
+        return .clear
     }
 }

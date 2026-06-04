@@ -3,6 +3,17 @@ import Foundation
 import SwiftData
 import CryptoKit
 
+/// Prevents two concurrent backgroundIngest tasks from inserting the same content.
+private actor IngestLock {
+    private var active: Set<String> = []
+    func tryLock(_ hash: String) -> Bool {
+        guard !active.contains(hash) else { return false }
+        active.insert(hash)
+        return true
+    }
+    func unlock(_ hash: String) { active.remove(hash) }
+}
+
 @MainActor
 final class ClipboardMonitor: ObservableObject {
     @Published var isPaused: Bool = false
@@ -14,6 +25,7 @@ final class ClipboardMonitor: ObservableObject {
     private var lastChangeCount: Int
     // Written only from MainActor; read on bg by passing snapshot value
     private(set) var lastContentHash: String?
+    private nonisolated let ingestLock = IngestLock()
 
     // Max raw content stored — larger content stored as thumbnail only
     private static let maxRawBytes = 8 * 1024 * 1024  // 8 MB
@@ -107,6 +119,11 @@ final class ClipboardMonitor: ObservableObject {
         let snap = PasteboardHelper.snapshot(pb)
         guard !snap.isConcealed, !snap.isTransient else { return }
 
+        // Yield after the blocking pasteboard IPC read (can be 20-100ms for large images)
+        // so any shortcut handler queued during that read runs immediately, before the
+        // rest of tick()'s work. The new item gets ingested concurrently via Task.detached.
+        await Task.yield()
+
         let settings = CaptureSettings()
         guard !snap.isUniversalClipboard || settings.captureUniversalClipboard else { return }
 
@@ -146,6 +163,8 @@ final class ClipboardMonitor: ObservableObject {
 
         let hash = Self.hash(payload.content)
         guard hash != priorHash else { return }
+        guard await ingestLock.tryLock(hash) else { return }
+        defer { Task { await self.ingestLock.unlock(hash) } }
 
         let title       = ContentTypeDetector.title(for: snap, type: type)
         let colorHex    = type == .color ? ColorParsing.hexFrom(snap.string ?? "") : nil
@@ -352,7 +371,17 @@ final class ClipboardMonitor: ObservableObject {
             }
             return nil
 
-        case .text, .markdown, .code, .link, .color, .svg:
+        case .color:
+            if let s = snap.string?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                // Normalize hex to #RRGGBB for content so "E60EC9" and "#E60EC9" hash
+                // identically and deduplicate correctly. Original text preserved for display.
+                let normalized = ColorParsing.hexFrom(s) ?? s
+                return Payload(content: Data(normalized.utf8), text: s,
+                               thumbnail: nil, fileSize: nil, mime: "text/plain")
+            }
+            return richFallbackPayload(from: snap)
+
+        case .text, .markdown, .code, .link, .svg:
             if let s = snap.string?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
                 let text = s.count > 500_000 ? String(s.prefix(500_000)) : s
                 return Payload(content: Data(text.utf8), text: text,

@@ -45,6 +45,10 @@ struct MenuBarPopover: View {
 
         Divider()
 
+        Button("Welcome Tour…") {
+            coordinator.presentOnboarding(force: true)
+        }
+
         Button("Settings") {
             openSettings()
         }
