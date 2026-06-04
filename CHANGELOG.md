@@ -21,6 +21,30 @@ Version **0.1.8**
 #### Changed
 
 - **Quick Search bottom bar** — Library, Pause/Resume, Settings, and Quit are now icon-only circle buttons matching the toolbar style; text labels removed
+- **Quick Search filter chips** — selected chip now fills with solid accent color and white text instead of a translucent tint; ctive state at a glance
+- **Quick Search filter bar fade** — a gradient mask fades both edges of the filter bar so chips scroll smoothly off-screen without hard clipping
+- **Pinned and Favorites chips** — icon-only in the filter bar; tooltip and VoiceOver still expose the full label
+
+#### Fixed
+
+- **Swift 6 concurrency** — `ClipboardMonitor` static size constants (`maxRawBytes`, `maxTextBytes`) marked `nonisolated(unsafe)`; `isTypeCaptured` closure annotated `@Sendable`; resolves actor-isolation errors under Swift 6 language mode
+
+---
+
+## [0.1.8] — 2026-06-04
+
+Version **0.1.8**
+
+### Build 1
+
+#### Added
+
+- **Quick Search clear button** — × button appears in the search field whenever text is entered; clears the query in one click
+- **Quick Search result count** — a compact "X of Y" label appears below the filter bar whenever a filter or search is active
+
+#### Changed
+
+- **Quick Search bottom bar** — Library, Pause/Resume, Settings, and Quit are now icon-only circle buttons matching the toolbar style; text labels removed
 - **Quick Search filter chips** — selected chip now fills with solid accent color and white text instead of a translucent tint; clearer active state at a glance
 - **Quick Search filter bar fade** — a gradient mask fades both edges of the filter bar so chips scroll smoothly off-screen without hard clipping
 - **Pinned and Favorites chips** — icon-only in the filter bar; tooltip and VoiceOver still expose the full label
