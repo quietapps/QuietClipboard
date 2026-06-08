@@ -6,7 +6,12 @@ struct PopupItemsView: View {
     var selectedIndex: Int?
     var keyboardTick: Int = 0
     var scrollResetToken: Int = 0
+    /// IDs currently multi-selected. Non-empty enables checkmarks + bulk-action mode.
+    var multiSelectedIDs: Set<UUID> = []
     let onActivate: (ClipboardItem) -> Void
+    /// Called when a row is clicked with ⌘ or ⇧ held, OR when any plain click
+    /// happens while `multiSelectedIDs` is non-empty. `Int` is the row's index.
+    var onModifierActivate: ((ClipboardItem, Int, NSEvent.ModifierFlags) -> Void)?
     let onTogglePin: (ClipboardItem) -> Void
     let onDelete: (ClipboardItem) -> Void
     let onToggleFavorite: (ClipboardItem) -> Void
@@ -58,7 +63,12 @@ struct PopupItemsView: View {
         PopupClipRow(
             item: item,
             isSelected: selectedIndex == idx,
+            isMultiSelected: multiSelectedIDs.contains(item.id),
+            multiSelectionActive: !multiSelectedIDs.isEmpty,
             onActivate: { onActivate(item) },
+            onModifierActivate: onModifierActivate.map { handler in
+                { flags in handler(item, idx, flags) }
+            },
             onTogglePin: { onTogglePin(item) },
             onToggleFavorite: { onToggleFavorite(item) },
             onDelete: { onDelete(item) }

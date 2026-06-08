@@ -203,17 +203,21 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var winRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &winRef) == .success,
-              let winObj = winRef else { return nil }
+              let winObj = winRef,
+              CFGetTypeID(winObj) == AXUIElementGetTypeID() else { return nil }
         let win = winObj as! AXUIElement
         var posRef: CFTypeRef?
         var sizeRef: CFTypeRef?
         AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &posRef)
         AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sizeRef)
-        guard let posObj = posRef, let sizeObj = sizeRef else { return nil }
+        guard let posObj = posRef, CFGetTypeID(posObj) == AXValueGetTypeID(),
+              let sizeObj = sizeRef, CFGetTypeID(sizeObj) == AXValueGetTypeID() else { return nil }
+        let posValue = posObj as! AXValue
+        let sizeValue = sizeObj as! AXValue
         var pos = CGPoint.zero
         var sz = CGSize.zero
-        AXValueGetValue(posObj as! AXValue, .cgPoint, &pos)
-        AXValueGetValue(sizeObj as! AXValue, .cgSize, &sz)
+        guard AXValueGetValue(posValue, .cgPoint, &pos),
+              AXValueGetValue(sizeValue, .cgSize, &sz) else { return nil }
         let screenMaxY = NSScreen.screens.map { $0.frame.maxY }.max() ?? 0
         let cocoaY = screenMaxY - pos.y - sz.height
         return CGRect(x: pos.x, y: cocoaY, width: sz.width, height: sz.height)

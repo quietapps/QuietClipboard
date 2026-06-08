@@ -33,11 +33,19 @@ struct ClipRowLeadingAccessory: View {
                     .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
             )
         case .compact:
-            Image(systemName: item.isSensitive && !coordinator.isSensitiveRevealed(item.id)
-                  ? "lock.fill" : item.contentType.systemImage)
-                .font(.system(size: min(richSize.width, richSize.height) * 0.42))
-                .foregroundStyle(.secondary)
-                .frame(width: richSize.width, height: richSize.height)
+            Group {
+                if isRedacted {
+                    SensitiveThumbnailMask(cornerRadius: 5)
+                } else {
+                    ClipboardItemPreview(item: item)
+                }
+            }
+            .frame(width: richSize.width, height: richSize.height)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
+            )
         }
     }
 }

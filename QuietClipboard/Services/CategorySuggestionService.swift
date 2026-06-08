@@ -1,8 +1,42 @@
 import Foundation
 import NaturalLanguage
+import SwiftData
 
 @MainActor
 enum CategorySuggestionService {
+    /// Attach all suggestions at or above `threshold` to `item`, creating missing
+    /// categories. Returns suggestions below the threshold for banner display.
+    static func autoApply(
+        suggestions: [CategorySuggestion],
+        to item: ClipboardItem,
+        context: ModelContext,
+        threshold: Double
+    ) -> [CategorySuggestion] {
+        guard !suggestions.isEmpty else { return [] }
+        let toApply  = suggestions.filter { $0.confidence >= threshold }
+        let remaining = suggestions.filter { $0.confidence <  threshold }
+        guard !toApply.isEmpty else { return remaining }
+
+        let descriptor = FetchDescriptor<Category>(sortBy: [SortDescriptor(\.sortOrder)])
+        var existing = (try? context.fetch(descriptor)) ?? []
+
+        for s in toApply {
+            let cat: Category
+            if let e = existing.first(where: { $0.name.caseInsensitiveCompare(s.name) == .orderedSame }) {
+                cat = e
+            } else {
+                let nextOrder = (existing.last?.sortOrder ?? 0) + 1
+                cat = Category(name: s.name, icon: s.icon, color: s.color, sortOrder: nextOrder)
+                context.insert(cat)
+                existing.append(cat)
+            }
+            if !item.categories.contains(where: { $0.id == cat.id }) {
+                item.categories.append(cat)
+            }
+        }
+        return remaining
+    }
+
     static func suggest(for item: ClipboardItem, useML: Bool? = nil) -> [CategorySuggestion] {
         let useML = useML ?? Preferences.autoCategorizationML
         var results: [CategorySuggestion] = []

@@ -110,6 +110,16 @@ struct MenuBarPopover: View {
         .buttonStyle(.plain)
         .pointerCursor()
         .help("Copy to clipboard")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel(item, index: index))
+        .accessibilityHint("Copies to the clipboard")
+    }
+
+    private func rowAccessibilityLabel(_ item: ClipboardItem, index: Int) -> String {
+        var label = "\(item.contentType.displayName): \(rowText(item))"
+        if let app = item.sourceAppName { label += ", from \(app)" }
+        if index < 9 { label += ", shortcut Control Command \(index + 1)" }
+        return label
     }
 
     private func rowText(_ item: ClipboardItem) -> String {
@@ -175,6 +185,7 @@ struct MenuBarPopover: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("More")
+            .accessibilityLabel("More actions")
             footerButton("gearshape", help: "Settings") { openSettings() }
             footerButton("power", help: "Quit Quiet Clipboard") { NSApp.terminate(nil) }
         }
@@ -192,6 +203,7 @@ struct MenuBarPopover: View {
         .buttonStyle(.borderless)
         .pointerCursor()
         .help(help)
+        .accessibilityLabel(Text(help))
     }
 
     private func clearHistory(keepFavorites: Bool) {

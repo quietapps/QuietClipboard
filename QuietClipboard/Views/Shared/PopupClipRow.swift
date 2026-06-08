@@ -6,7 +6,12 @@ struct PopupClipRow: View {
     @ObservedObject private var pinned = PinnedClipStore.shared
     let item: ClipboardItem
     let isSelected: Bool
+    var isMultiSelected: Bool = false
+    /// True when any item in the list is currently multi-selected. Plain clicks
+    /// then route to `onModifierActivate` (toggle membership) instead of `onActivate`.
+    var multiSelectionActive: Bool = false
     let onActivate: () -> Void
+    var onModifierActivate: ((NSEvent.ModifierFlags) -> Void)? = nil
     let onTogglePin: () -> Void
     let onToggleFavorite: () -> Void
     let onDelete: () -> Void
@@ -20,36 +25,66 @@ struct PopupClipRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Button(action: {
+                let flags = NSApp.currentEvent?.modifierFlags ?? []
+                let modifierHeld = !flags.intersection([.command, .shift]).isEmpty
+                if let mod = onModifierActivate, (modifierHeld || multiSelectionActive) {
+                    mod(flags)
+                    return
+                }
                 if coordinator.shouldProceedWithSensitiveAction(for: item) {
                     onActivate()
                 }
             }) {
                 HStack(spacing: 10) {
+                    if isMultiSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                            .font(.system(size: 14))
+                    }
                     ClipRowLeadingAccessory(
                         item: item,
                         richSize: CGSize(
-                            width: clipPreviewStyle == .compact ? 28 : 50,
-                            height: clipPreviewStyle == .compact ? 28 : 50
+                            width: clipPreviewStyle == .compact ? 22 : 50,
+                            height: clipPreviewStyle == .compact ? 22 : 50
                         )
                     )
-                    VStack(alignment: .leading, spacing: 2) {
+                    if clipPreviewStyle == .compact {
                         SensitiveClipLabel(
                             item: item,
-                            font: clipPreviewStyle == .compact ? .callout : .body,
-                            lineLimit: clipPreviewStyle == .compact ? 2 : 1,
-                            monospaced: item.contentType == .code
+                            font: .callout,
+                            lineLimit: 1,
+                            monospaced: item.contentType == .code,
+                            inlineMultiline: true
                         )
-                        HStack(spacing: 6) {
-                            StructuredDataBadgeRow(item: item, compact: true)
-                            Image(systemName: item.contentType.systemImage).font(.caption2)
-                            Text(item.contentType.displayName).font(.caption2)
-                            Text("·").font(.caption2)
-                            ClipSourceIcon(item: item, size: 10)
-                            Text(item.sourceAppName ?? "Unknown").font(.caption2)
-                            Text("·").font(.caption2)
-                            Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt)).font(.caption2)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            SensitiveClipLabel(
+                                item: item,
+                                font: .body,
+                                lineLimit: 1,
+                                monospaced: item.contentType == .code,
+                                inlineMultiline: true
+                            )
+                            HStack(spacing: 6) {
+                                StructuredDataBadgeRow(item: item, compact: true)
+                                Image(systemName: item.contentType.systemImage).font(.caption2)
+                                Text(item.contentType.displayName).font(.caption2)
+                                Text("·").font(.caption2)
+                                ClipSourceIcon(item: item, size: 10)
+                                Text(item.sourceAppName ?? "Unknown").font(.caption2)
+                                if item.distinctSourceAppNames.count > 1 {
+                                    Text("+\(item.distinctSourceAppNames.count - 1)")
+                                        .font(.caption2.weight(.semibold))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                                        .help("Also copied from " + item.distinctSourceAppNames.dropFirst().joined(separator: ", "))
+                                }
+                                Text("·").font(.caption2)
+                                Text(DateFormatting.relativeString(from: item.effectiveLastCopiedAt)).font(.caption2)
+                            }
+                            .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -57,6 +92,10 @@ struct PopupClipRow: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(activateLabel)
+            .accessibilityValue(activateValue)
+            .accessibilityHint("Pastes into the previous app")
 
             Button(action: onTogglePin) {
                 Image(systemName: pinned.isPinned(item.id) ? "pin.fill" : "pin")
@@ -68,6 +107,7 @@ struct PopupClipRow: View {
             .buttonStyle(.borderless)
             .pointerCursor()
             .help(pinHelp)
+            .accessibilityLabel(pinned.isPinned(item.id) ? "Unpin" : "Pin to slot")
 
             Button(action: onToggleFavorite) {
                 Image(systemName: item.isFavorite ? "star.fill" : "star")
@@ -79,6 +119,7 @@ struct PopupClipRow: View {
             .buttonStyle(.borderless)
             .pointerCursor()
             .help(item.isFavorite ? "Remove from favorites" : "Add to favorites")
+            .accessibilityLabel(item.isFavorite ? "Remove from favorites" : "Add to favorites")
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
@@ -90,17 +131,37 @@ struct PopupClipRow: View {
             .buttonStyle(.borderless)
             .pointerCursor()
             .help("Delete from history")
+            .accessibilityLabel("Delete from history")
         }
         .padding(.leading, 8)
         .padding(.trailing, 4)
-        .padding(.vertical, clipPreviewStyle == .compact ? 2 : 4)
+        .padding(.vertical, clipPreviewStyle == .compact ? 1 : 4)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
+                .fill(
+                    isMultiSelected
+                        ? Color.accentColor.opacity(0.35)
+                        : (isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
+                )
         )
         .contextMenu {
             PopupItemContextMenu(item: item)
         }
+    }
+
+    private var activateLabel: String {
+        var parts = ["\(item.contentType.displayName) clip"]
+        if let app = item.sourceAppName { parts.append("from \(app)") }
+        if pinned.isPinned(item.id) { parts.append("pinned") }
+        if item.isFavorite { parts.append("favorite") }
+        if isMultiSelected { parts.append("selected") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Never read raw content aloud for sensitive clips — mirror the on-screen redaction.
+    private var activateValue: String {
+        if item.isSensitive { return "Hidden sensitive content" }
+        return item.title ?? item.textContent ?? ""
     }
 
     private var pinHelp: String {

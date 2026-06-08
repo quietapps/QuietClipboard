@@ -9,15 +9,15 @@ struct QuietClipboardApp: App {
 
     init() {
         let schema = Schema([ClipboardItem.self, Category.self, ClipboardCopyEvent.self])
-        let storeURL = SharedStore.storeURL()
-        let config = ModelConfiguration(schema: schema, url: storeURL)
-        do {
-            let container = try ModelContainer(for: schema, configurations: [config])
-            let coord = AppCoordinator(container: container)
-            _coordinator = StateObject(wrappedValue: coord)
-            Task { @MainActor in coord.bootstrap() }
-        } catch {
-            fatalError("SwiftData container failed: \(error)")
+        let result = StoreBootstrap.makeContainer(schema: schema)
+        let coord = AppCoordinator(container: result.container)
+        _coordinator = StateObject(wrappedValue: coord)
+        let recoveryMessage = result.recoveryMessage
+        Task { @MainActor in
+            coord.bootstrap()
+            if let recoveryMessage {
+                StoreBootstrap.presentRecoveryAlert(recoveryMessage)
+            }
         }
     }
 

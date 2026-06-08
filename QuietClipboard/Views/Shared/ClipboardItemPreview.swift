@@ -31,22 +31,19 @@ struct ClipboardItemPreview: View {
         Group {
             switch item.contentType {
             case .image, .screenshot:
-                if let data = item.thumbnailData ?? item.content as Data?,
-                   let nsImage = NSImage(data: data) {
-                    if fillImages {
-                        GeometryReader { geo in
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: geo.size.width, height: geo.size.height)
-                                .clipped()
-                        }
-                    } else {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity)
-                    }
+                // Prefer the pre-generated thumbnail; only fault the full content blob when
+                // no thumbnail exists yet (in-flight / legacy items). Decoding + downsampling
+                // happens off the main thread and is cached, so list scrolling never blocks
+                // on NSImage(data:) and large blobs aren't retained in the view tree.
+                if let data = item.thumbnailData ?? item.content as Data? {
+                    ClipImageView(
+                        data: data,
+                        cacheKey: "\(item.id.uuidString)-\(item.thumbnailData != nil ? "t" : "c")",
+                        maxPixel: largeIcons ? 1024 : 512,
+                        fill: fillImages,
+                        placeholderSystemImage: item.contentType.systemImage,
+                        largeIcons: largeIcons
+                    )
                 } else {
                     placeholder
                 }
@@ -131,6 +128,107 @@ struct ClipboardItemPreview: View {
             .font(.system(size: largeIcons ? 48 : 24))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Decodes and downsamples image data off the main thread, caching the small result so
+/// repeated renders (scroll reuse) are instant and large source blobs are never retained.
+final class ThumbnailDecoder {
+    static let shared = ThumbnailDecoder()
+
+    private let cache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 300
+        return c
+    }()
+
+    func cached(_ key: String) -> NSImage? { cache.object(forKey: key as NSString) }
+
+    /// Decodes on a background queue and delivers the result on the main queue.
+    func image(for data: Data,
+               key: String,
+               maxPixel: CGFloat,
+               completion: @escaping (NSImage?) -> Void) {
+        if let hit = cache.object(forKey: key as NSString) {
+            completion(hit)
+            return
+        }
+        let cache = self.cache
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = ThumbnailDecoder.downsample(data: data, maxPixel: maxPixel)
+            if let image { cache.setObject(image, forKey: key as NSString) }
+            DispatchQueue.main.async { completion(image) }
+        }
+    }
+
+    private static func downsample(data: Data, maxPixel: CGFloat) -> NSImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return NSImage(data: data) // exotic formats ImageIO can't index
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return NSImage(data: data)
+        }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+}
+
+/// Async, cached, downsampled image view used by clip previews.
+struct ClipImageView: View {
+    let data: Data
+    let cacheKey: String
+    let maxPixel: CGFloat
+    var fill: Bool = true
+    var placeholderSystemImage: String = "photo"
+    var largeIcons: Bool = false
+
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                if fill {
+                    GeometryReader { geo in
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    }
+                } else {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                Image(systemName: placeholderSystemImage)
+                    .font(.system(size: largeIcons ? 48 : 24))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear(perform: load)
+        .onChange(of: cacheKey) { _, _ in
+            image = nil
+            load()
+        }
+    }
+
+    private func load() {
+        if let hit = ThumbnailDecoder.shared.cached(cacheKey) {
+            image = hit
+            return
+        }
+        ThumbnailDecoder.shared.image(for: data, key: cacheKey, maxPixel: maxPixel) { decoded in
+            image = decoded
+        }
     }
 }
 

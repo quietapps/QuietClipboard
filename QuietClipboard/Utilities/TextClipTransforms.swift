@@ -153,4 +153,25 @@ extension ClipboardItem {
         default: return "Untitled"
         }
     }
+
+    /// Single-line summary that preserves visibility of multi-line content by
+    /// replacing newlines with a return-key symbol. SwiftUI tail-truncates to fit width.
+    var inlineMultilineSummary: String {
+        if let raw = resolvedText {
+            let normalized = raw
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+            // Collapse runs of spaces/tabs within a line but keep newline boundaries.
+            let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+                let trimmed = line.trimmingCharacters(in: CharacterSet.whitespaces)
+                return trimmed
+            }
+            let joined = lines.joined(separator: " ⏎ ")
+            let bounded = String(joined.prefix(400))
+            if !bounded.trimmingCharacters(in: .whitespaces).isEmpty {
+                return bounded
+            }
+        }
+        return displaySummary
+    }
 }

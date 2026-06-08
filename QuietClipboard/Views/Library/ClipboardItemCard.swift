@@ -293,6 +293,7 @@ struct LibraryCard: View {
                                 .foregroundStyle(.white)
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityHidden(true)
 
                         Spacer()
 
@@ -307,6 +308,8 @@ struct LibraryCard: View {
                                 .foregroundStyle(.red.opacity(0.9))
                         }
                         .buttonStyle(.borderless)
+                        .help("Delete clip")
+                        .accessibilityLabel("Delete clip")
 
                         // Favorite button
                         Button {
@@ -319,6 +322,8 @@ struct LibraryCard: View {
                                 .foregroundStyle(item.isFavorite ? Color.yellow : .white)
                         }
                         .buttonStyle(.borderless)
+                        .help(item.isFavorite ? "Remove favorite" : "Add favorite")
+                        .accessibilityLabel(item.isFavorite ? "Remove from favorites" : "Add to favorites")
                     }
                     .padding(8)
                     Spacer()
@@ -477,6 +482,19 @@ struct ClipboardItemRow: View {
                     .offset(x: -4)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel)
+        .accessibilityValue(item.title ?? item.textContent ?? "")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var rowAccessibilityLabel: String {
+        var parts = ["\(item.contentType.displayName) clip"]
+        if let app = item.sourceAppName { parts.append("from \(app)") }
+        if pinned.isPinned(item.id) { parts.append("pinned") }
+        if item.isFavorite { parts.append("favorite") }
+        if let queuePosition { parts.append("queued position \(queuePosition)") }
+        return parts.joined(separator: ", ")
     }
 
     private var rowBackground: Color {

@@ -80,11 +80,12 @@ enum Preferences {
     /// Master switches for capture groups (Text, Media, Other). When off, no types in that group are captured.
     @MainActor static var enabledCaptureGroups: Set<CaptureContentGroup> {
         get {
-            if let raw = defaults.array(forKey: "QC.CaptureGroupsEnabled") as? [String] {
-                let groups = Set(raw.compactMap { CaptureContentGroup(rawValue: $0) })
-                return groups.isEmpty ? Set(CaptureContentGroup.allCases) : groups
+            // Only an ABSENT key means "never configured" → default to all on. A persisted
+            // empty array is a deliberate "everything off" state and must be preserved.
+            guard let raw = defaults.array(forKey: "QC.CaptureGroupsEnabled") as? [String] else {
+                return Set(CaptureContentGroup.allCases)
             }
-            return Set(CaptureContentGroup.allCases)
+            return Set(raw.compactMap { CaptureContentGroup(rawValue: $0) })
         }
         set {
             defaults.set(newValue.map(\.rawValue), forKey: "QC.CaptureGroupsEnabled")
@@ -217,6 +218,21 @@ enum Preferences {
     @MainActor static var autoCategorizationML: Bool {
         get { defaults.object(forKey: "QC.AutoCategorizeML") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "QC.AutoCategorizeML") }
+    }
+
+    /// When true, suggestions at or above `autoCategorizationAutoApplyThreshold`
+    /// are attached to the clip automatically; remaining suggestions stay as banner pending.
+    @MainActor static var autoCategorizationAutoApply: Bool {
+        get { defaults.object(forKey: "QC.AutoCategorizeAutoApply") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "QC.AutoCategorizeAutoApply") }
+    }
+
+    @MainActor static var autoCategorizationAutoApplyThreshold: Double {
+        get {
+            let v = defaults.object(forKey: "QC.AutoCategorizeAutoApplyThreshold") as? Double
+            return v ?? 0.85
+        }
+        set { defaults.set(newValue, forKey: "QC.AutoCategorizeAutoApplyThreshold") }
     }
 
     @MainActor static var collapseDuplicates: Bool {

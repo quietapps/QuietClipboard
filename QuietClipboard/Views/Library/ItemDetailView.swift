@@ -137,12 +137,14 @@ struct ItemDetailView: View {
     private var content: some View {
         switch item.contentType {
         case .image, .screenshot:
-            if let img = NSImage(data: item.content) {
-                Image(nsImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 600)
-            }
+            ClipImageView(
+                data: item.content,
+                cacheKey: "\(item.id.uuidString)-detail",
+                maxPixel: 1600,
+                fill: false,
+                placeholderSystemImage: item.contentType.systemImage
+            )
+            .frame(maxWidth: 600)
             if let ocr = item.ocrText, !ocr.isEmpty {
                 DisclosureGroup("OCR Text") {
                     Text(ocr).font(.callout).textSelection(.enabled)

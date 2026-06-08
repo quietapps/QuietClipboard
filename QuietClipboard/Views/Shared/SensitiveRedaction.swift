@@ -100,6 +100,9 @@ struct SensitiveClipLabel: View {
     var font: Font = .body
     var lineLimit: Int = 2
     var monospaced: Bool = false
+    /// When true, render multi-line text inline with a return-key glyph (`⏎`)
+    /// between lines, so additional content stays visible within `lineLimit`.
+    var inlineMultiline: Bool = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -116,9 +119,11 @@ struct SensitiveClipLabel: View {
     private var labelText: some View {
         let title = Text(SensitiveRedaction.displayTitle(
             for: item,
-            isRevealed: coordinator.isSensitiveRevealed(item.id)
+            isRevealed: coordinator.isSensitiveRevealed(item.id),
+            inlineMultiline: inlineMultiline
         ))
         .lineLimit(lineLimit)
+        .truncationMode(.tail)
         if monospaced {
             title.font(font).monospaced()
         } else {
@@ -128,10 +133,10 @@ struct SensitiveClipLabel: View {
 }
 
 enum SensitiveRedaction {
-    static func displayTitle(for item: ClipboardItem, isRevealed: Bool) -> String {
+    static func displayTitle(for item: ClipboardItem, isRevealed: Bool, inlineMultiline: Bool = false) -> String {
         if item.isSensitive, !isRevealed {
             return "Sensitive content"
         }
-        return item.displaySummary
+        return inlineMultiline ? item.inlineMultilineSummary : item.displaySummary
     }
 }

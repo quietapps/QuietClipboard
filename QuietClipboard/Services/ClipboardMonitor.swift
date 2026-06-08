@@ -142,8 +142,13 @@ final class ClipboardMonitor: ObservableObject {
             self.autoCategorizationML       = Preferences.autoCategorizationML
             self.captureUniversalClipboard  = Preferences.captureUniversalClipboard
             self.excludedBundleIDs          = Preferences.excludedBundleIDs
+            // Gate on BOTH the group master switch and the per-type set — mirror
+            // Preferences.isTypeCaptured. Capturing the two Sets by value keeps this @Sendable.
             let captured                    = Preferences.capturedTypes
-            self.isTypeCaptured             = { captured.contains($0) }
+            let groups                      = Preferences.enabledCaptureGroups
+            self.isTypeCaptured             = { type in
+                groups.contains(type.captureGroup) && captured.contains(type)
+            }
         }
     }
 
@@ -290,9 +295,17 @@ final class ClipboardMonitor: ObservableObject {
             catch { NSLog("Insert save failed: \(error)"); resultID = nil; wasInsert = false }
         }
 
+        let saveFailed = (resultID == nil)
         await MainActor.run { [weak self] in
             self?.lastContentHash = hash
-            if wasInsert {
+            if saveFailed {
+                // Surface lost clips instead of failing silently. `lastContentHash` is set
+                // above, so this fires at most once per distinct clip — no per-poll spam.
+                FeedbackHUD.shared.show("Couldn’t save the last copied item",
+                                        systemImage: "exclamationmark.triangle.fill",
+                                        isWarning: true,
+                                        duration: 2.2)
+            } else if wasInsert {
                 if saveHidden { CaptureFeedbackSound.playSensitiveCapture() }
                 else          { CaptureFeedbackSound.playNewCapture() }
             }
@@ -302,7 +315,40 @@ final class ClipboardMonitor: ObservableObject {
             Task.detached(priority: .background) { [weak self] in
                 await self?.enrich(itemID: id, type: type, snap: snap, payload: payload,
                                    settings: settings)
+                await self?.autoCategorize(itemID: id, settings: settings)
             }
+        }
+    }
+
+    // MARK: - Auto-categorization
+
+    nonisolated private func autoCategorize(itemID: UUID, settings: CaptureSettings) async {
+        guard settings.autoCategorizationEnabled else { return }
+        await MainActor.run {
+            let ctx = ModelContext(modelContainer)
+            var d = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == itemID })
+            d.fetchLimit = 1
+            guard let item = (try? ctx.fetch(d))?.first else { return }
+
+            let suggestions = CategorySuggestionService.suggest(for: item, useML: settings.autoCategorizationML)
+            guard !suggestions.isEmpty else { return }
+
+            let remaining: [CategorySuggestion]
+            if Preferences.autoCategorizationAutoApply {
+                remaining = CategorySuggestionService.autoApply(
+                    suggestions: suggestions,
+                    to: item,
+                    context: ctx,
+                    threshold: Preferences.autoCategorizationAutoApplyThreshold
+                )
+            } else {
+                remaining = suggestions
+            }
+            if !remaining.isEmpty, item.pendingSuggestions.isEmpty {
+                item.setPendingSuggestions(remaining)
+            }
+            item.modifiedAt = .now
+            try? ctx.save()
         }
     }
 
@@ -316,23 +362,8 @@ final class ClipboardMonitor: ObservableObject {
         switch type {
         case .image, .screenshot:
             if let ocr = await OCRService.recognizeText(in: payload.content) {
-                // Pre-compute categorization suggestions on main if needed
-                let suggestions: [CategorySuggestion]
-                if settings.autoCategorizationEnabled {
-                    suggestions = await MainActor.run {
-                        let ctx = ModelContext(modelContainer)
-                        var d = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == itemID })
-                        d.fetchLimit = 1
-                        guard let item = (try? ctx.fetch(d))?.first else { return [] }
-                        return CategorySuggestionService.suggest(for: item, useML: settings.autoCategorizationML)
-                    }
-                } else { suggestions = [] }
-
                 await applyUpdate(itemID: itemID) { item in
                     item.ocrText = ocr
-                    if !suggestions.isEmpty, item.pendingSuggestions.isEmpty {
-                        item.setPendingSuggestions(suggestions)
-                    }
                 }
             }
         case .link:

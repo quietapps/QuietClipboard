@@ -29,4 +29,26 @@ extension ClipboardItem {
     func sortedCopyEvents() -> [ClipboardCopyEvent] {
         copyEvents.sorted { $0.copiedAt > $1.copiedAt }
     }
+
+    /// Distinct source app bundle IDs across all recorded copies (incl. base source).
+    var distinctSourceBundleIDs: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        if let b = sourceAppBundleID, !b.isEmpty, seen.insert(b).inserted { out.append(b) }
+        for e in copyEvents {
+            if let b = e.sourceAppBundleID, !b.isEmpty, seen.insert(b).inserted { out.append(b) }
+        }
+        return out
+    }
+
+    /// Distinct source app display names across all recorded copies.
+    var distinctSourceAppNames: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        if let n = sourceAppName, !n.isEmpty, seen.insert(n).inserted { out.append(n) }
+        for e in copyEvents {
+            if let n = e.sourceAppName, !n.isEmpty, seen.insert(n).inserted { out.append(n) }
+        }
+        return out
+    }
 }

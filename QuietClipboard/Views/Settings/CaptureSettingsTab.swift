@@ -9,6 +9,7 @@ struct CaptureSettingsTab: View {
     @State private var linkPreviewsEnabled: Bool = Preferences.linkPreviewsEnabled
     @State private var autoCategorize: Bool = Preferences.autoCategorizationEnabled
     @State private var autoCategorizeML: Bool = Preferences.autoCategorizationML
+    @State private var autoCategorizeAutoApply: Bool = Preferences.autoCategorizationAutoApply
     @State private var collapseDuplicates: Bool = Preferences.collapseDuplicates
     @State private var captureUniversalClipboard: Bool = Preferences.captureUniversalClipboard
 
@@ -98,6 +99,15 @@ struct CaptureSettingsTab: View {
                 )
                 .disabled(!autoCategorize)
                 .onChange(of: autoCategorizeML) { _, v in Preferences.autoCategorizationML = v }
+                SettingsInsetDivider()
+                SettingsToggleRow(
+                    title: "Auto-apply high-confidence suggestions",
+                    icon: "sparkles",
+                    iconTint: .pink,
+                    isOn: $autoCategorizeAutoApply
+                )
+                .disabled(!autoCategorize)
+                .onChange(of: autoCategorizeAutoApply) { _, v in Preferences.autoCategorizationAutoApply = v }
                 SettingsInsetDivider()
                 SettingsToggleRow(
                     title: "Collapse near-duplicate clips",

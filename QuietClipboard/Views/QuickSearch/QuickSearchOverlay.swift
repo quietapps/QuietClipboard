@@ -23,6 +23,7 @@ struct QuickSearchOverlay: View {
     @FocusState private var searchFocused: Bool
     @State private var displayItems: [ClipboardItem] = []
     @State private var filterTask: Task<Void, Never>?
+    @State private var multiSelectedIDs: Set<UUID> = []
 
     var onPaste: (ClipboardItem) -> Void
     var onPlainPaste: (ClipboardItem) -> Void
@@ -62,6 +63,10 @@ struct QuickSearchOverlay: View {
                         coordinator.pinned.pin(itemID: item.id, to: slot)
                     }
                 )
+            }
+            if !multiSelectedIDs.isEmpty {
+                Divider()
+                multiSelectActionBar
             }
             Divider()
             bottomBar
@@ -119,7 +124,13 @@ struct QuickSearchOverlay: View {
             onType: typeSelected,
             onPlainEnter: activatePlain
         ))
-        .onExitCommand(perform: onDismiss)
+        .onExitCommand {
+            if !multiSelectedIDs.isEmpty {
+                clearMultiSelection()
+            } else {
+                onDismiss()
+            }
+        }
     }
 
     private var listColumn: some View {
@@ -168,7 +179,11 @@ struct QuickSearchOverlay: View {
                     selectedIndex: selectedIndex,
                     keyboardTick: keyboardTick,
                     scrollResetToken: coordinator.quickSearchShowCount,
+                    multiSelectedIDs: multiSelectedIDs,
                     onActivate: { onPaste($0) },
+                    onModifierActivate: { item, idx, flags in
+                        handleModifierActivate(item: item, index: idx, flags: flags)
+                    },
                     onTogglePin: { togglePin($0) },
                     onDelete: { deleteItem($0) },
                     onToggleFavorite: { toggleFavorite($0) },
@@ -271,6 +286,7 @@ struct QuickSearchOverlay: View {
         pinnedOnly = false
         categoryFilter = nil
         selectedIndex = 0
+        multiSelectedIDs.removeAll()
         previewEnabled = Preferences.quickSearchPreviewEnabled
         previewWidth = Preferences.quickSearchPreviewWidth
         popupViewMode = Preferences.popupViewMode
@@ -484,6 +500,107 @@ struct QuickSearchOverlay: View {
         item.modifiedAt = .now
         try? context.save()
     }
+
+    // MARK: - Multi-select action bar
+
+    private var multiSelectActionBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+            Text("\(multiSelectedIDs.count) selected").font(.callout.weight(.medium))
+            Spacer()
+            Button {
+                bulkCopySelectedToClipboard()
+            } label: {
+                Label("Copy joined", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .help("Copy selected clips joined by newline (⌘C)")
+
+            Button(role: .destructive) {
+                bulkDeleteSelected()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button {
+                clearMultiSelection()
+            } label: {
+                Label("Clear", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.08))
+    }
+
+    // MARK: - Multi-select
+
+    private func handleModifierActivate(item: ClipboardItem, index: Int, flags: NSEvent.ModifierFlags) {
+        if flags.contains(.shift), let anchor = anchorIndex() {
+            let lo = min(anchor, index)
+            let hi = max(anchor, index)
+            for i in lo...hi where displayItems.indices.contains(i) {
+                multiSelectedIDs.insert(displayItems[i].id)
+            }
+            selectedIndex = index
+            return
+        }
+        if flags.contains(.command) || !multiSelectedIDs.isEmpty {
+            if multiSelectedIDs.contains(item.id) {
+                multiSelectedIDs.remove(item.id)
+            } else {
+                multiSelectedIDs.insert(item.id)
+            }
+            selectedIndex = index
+            return
+        }
+        // No modifier and no active selection: fall through to normal activate.
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+        onPaste(item)
+    }
+
+    private func anchorIndex() -> Int? {
+        guard let firstID = multiSelectedIDs.first else { return selectedIndex }
+        return displayItems.firstIndex(where: { $0.id == firstID }) ?? selectedIndex
+    }
+
+    private var selectedItems: [ClipboardItem] {
+        displayItems.filter { multiSelectedIDs.contains($0.id) }
+    }
+
+    private func clearMultiSelection() {
+        multiSelectedIDs.removeAll()
+    }
+
+    private func bulkCopySelectedToClipboard() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        let joined = items.compactMap { $0.resolvedText }.joined(separator: "\n")
+        guard !joined.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(joined, forType: .string)
+        FeedbackHUD.shared.show("Copied \(items.count) clips", systemImage: "doc.on.clipboard.fill", duration: 1.0)
+        clearMultiSelection()
+        onDismiss()
+    }
+
+    private func bulkDeleteSelected() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        for item in items {
+            coordinator.pinned.unpin(itemID: item.id)
+            context.delete(item)
+        }
+        try? context.save()
+        clearMultiSelection()
+        scheduleFilterRefresh()
+    }
 }
 
 private struct FilterChip: View {
@@ -576,15 +693,14 @@ private struct PreviewPane: View {
         switch item.contentType {
         case .image, .screenshot:
             PreviewContentCard(style: .panel) {
-                if let nsImage = NSImage(data: item.content) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    fallback(item)
-                }
+                ClipImageView(
+                    data: item.content,
+                    cacheKey: "\(item.id.uuidString)-detail",
+                    maxPixel: 1600,
+                    fill: false,
+                    placeholderSystemImage: item.contentType.systemImage
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .color:
             PreviewContentCard(style: .panel) {
