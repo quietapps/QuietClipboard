@@ -20,6 +20,9 @@ struct LibraryWindow: View {
 
     @State private var showNewCategorySheet = false
     @State private var rankCache = RankCache()
+    // Measured scroll-container width — keyboard navigation derives the grid's real column count
+    // from it (the adaptive layout never exposes one).
+    @State private var gridContainerWidth: CGFloat = 0
 
     // MARK: – Filtering (preserved from original)
 
@@ -124,9 +127,11 @@ struct LibraryWindow: View {
 
     // MARK: – Actions
 
-    private func copyFromLibrary(_ item: ClipboardItem) {
-        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
+    @discardableResult
+    private func copyFromLibrary(_ item: ClipboardItem) -> Bool {
+        guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return false }
         ClipboardItemUsage.copyToPasteboard(item, context: context, monitor: monitor)
+        return true
     }
 
     private func deleteItem(_ item: ClipboardItem) {
@@ -179,6 +184,128 @@ struct LibraryWindow: View {
         try? context.save()
     }
 
+    // MARK: – Keyboard navigation
+
+    /// Items in the order the user actually sees them, flattened for arrow-key traversal.
+    /// Grid renders `filtered` directly; list renders grouped sections (near-duplicate siblings
+    /// only count when their group is expanded). Timeline reorders by copy events internally,
+    /// so it falls back to linear `filtered` order — Up/Down still walk every visible clip.
+    private var keyboardItems: [ClipboardItem] {
+        guard state.view == .list, state.selection != .timeline else { return filtered }
+        var result: [ClipboardItem] = []
+        for section in displaySections {
+            for row in section.rows {
+                switch row {
+                case .single(let item):
+                    result.append(item)
+                case .nearDuplicateGroup(let primary, let siblings):
+                    result.append(primary)
+                    if state.expandedDuplicateGroups.contains(row.id) {
+                        result.append(contentsOf: siblings)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private var isGridNavigation: Bool {
+        state.view == .grid && state.selection != .timeline
+    }
+
+    private enum NavDirection { case up, down, left, right }
+
+    /// Returns true when the key was consumed (even when clamped at an edge, so the window
+    /// doesn't beep mid-navigation).
+    private func moveSelection(_ direction: NavDirection) -> Bool {
+        let items = keyboardItems
+        guard !items.isEmpty else { return false }
+
+        guard let currentID = state.selectedItemID,
+              let currentIndex = items.firstIndex(where: { $0.id == currentID }) else {
+            selectViaKeyboard(items[0])
+            return true
+        }
+
+        let columns = isGridNavigation
+            ? LibraryGridMetrics.libraryColumnCount(forGridWidth: gridContainerWidth)
+            : 1
+        let step: Int
+        switch direction {
+        case .left:  step = -1
+        case .right: step = 1
+        case .up:    step = -columns
+        case .down:  step = columns
+        }
+
+        let target = currentIndex + step
+        if items.indices.contains(target) {
+            selectViaKeyboard(items[target])
+        } else if direction == .down, target >= items.count, currentIndex < items.count - 1 {
+            // Moving down from the last full row into a shorter final row lands on the last item.
+            selectViaKeyboard(items[items.count - 1])
+        }
+        return true
+    }
+
+    private func selectViaKeyboard(_ item: ClipboardItem) {
+        withAnimation(.spring(duration: 0.22, bounce: 0.08)) {
+            state.selectedItemID = item.id
+        }
+    }
+
+    /// Delete with the same semantics as the context-menu delete, then keep keyboard focus
+    /// useful by selecting the item that slid into the deleted item's slot.
+    private func deleteSelectedViaKeyboard() {
+        guard let item = selectedItem else { return }
+        let items = keyboardItems
+        let index = items.firstIndex(where: { $0.id == item.id })
+        deleteItem(item)
+        guard let index else { return }
+        let remaining = items.filter { $0.id != item.id }
+        if remaining.indices.contains(index) {
+            state.selectedItemID = remaining[index].id
+        } else if let last = remaining.last {
+            state.selectedItemID = last.id
+        }
+    }
+
+    /// Routed from the window-scoped key monitor; only reached when the Library window is key
+    /// and no text field/editor owns focus. Returns true to consume the event.
+    private func handleLibraryKeyEvent(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 126: return moveSelection(.up)
+        case 125: return moveSelection(.down)
+        case 123: return moveSelection(.left)
+        case 124: return moveSelection(.right)
+        case 36, 76: // return / keypad enter — same code path as the Copy action
+            guard let item = selectedItem else { return false }
+            if copyFromLibrary(item) {
+                FeedbackHUD.shared.show("Copied", systemImage: "doc.on.doc.fill", duration: 1.0)
+            }
+            return true
+        case 49: // space — Quick Look
+            guard let item = selectedItem, QuickLookPreview.canPreview(item) else { return false }
+            // Same first-press-reveals semantics as Return: Quick Look renders the clip
+            // full-size, so a hidden sensitive clip must be revealed deliberately first.
+            guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return true }
+            QuickLookPreview.show(for: item)
+            return true
+        case 51, 117: // delete / forward delete
+            guard selectedItem != nil else { return false }
+            deleteSelectedViaKeyboard()
+            return true
+        case 53: // escape — closes the detail panel (open iff an item is selected)
+            guard state.selectedItemID != nil else { return false }
+            withAnimation(.spring(duration: 0.22, bounce: 0.08)) {
+                state.selectedItemID = nil
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: – Counts for tab bar
 
     private var historyCount: Int { allItems.count }
@@ -221,7 +348,7 @@ struct LibraryWindow: View {
                             items: filtered,
                             libraryState: state,
                             selectedID: $state.selectedItemID,
-                            onActivate: copyFromLibrary,
+                            onActivate: { copyFromLibrary($0) },
                             onItemTap: handleItemTap
                         )
                     } else if state.view == .grid {
@@ -234,7 +361,7 @@ struct LibraryWindow: View {
                             selectedID: $state.selectedItemID,
                             expandedGroups: $state.expandedDuplicateGroups,
                             expandedCopyHistories: $state.expandedCopyHistories,
-                            onActivate: copyFromLibrary,
+                            onActivate: { copyFromLibrary($0) },
                             onItemTap: handleItemTap
                         )
                     }
@@ -277,6 +404,7 @@ struct LibraryWindow: View {
             }
         }
         .background(.black)
+        .background(LibraryKeyHandler(handle: handleLibraryKeyEvent))
         .frame(minWidth: 840, minHeight: 560)
         .animation(.spring(duration: 0.22, bounce: 0.08), value: state.selectedItemID)
         .animation(.spring(duration: 0.28, bounce: 0.1), value: state.pasteQueueCount)
@@ -310,31 +438,51 @@ struct LibraryWindow: View {
     // MARK: – Grid area (new adaptive layout)
 
     private var libraryGrid: some View {
-        ScrollView {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 160, maximum: 240), spacing: 16)],
-                spacing: 16
-            ) {
-                ForEach(filtered) { item in
-                    LibraryCard(
-                        item: item,
-                        isSelected: item.id == state.selectedItemID,
-                        isQueued: state.isQueued(item.id),
-                        queuePosition: state.queuePosition(for: item.id, in: filtered),
-                        onTap: { handleItemTap(item) },
-                        onCopy: { copyFromLibrary(item) },
-                        onFavorite: { toggleFavorite(item) },
-                        onDelete: { deleteItem(item) }
-                    )
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(
+                        minimum: LibraryGridMetrics.libraryTileMinWidth,
+                        maximum: LibraryGridMetrics.libraryTileMaxWidth
+                    ), spacing: LibraryGridMetrics.libraryGridSpacing)],
+                    spacing: LibraryGridMetrics.libraryGridSpacing
+                ) {
+                    ForEach(filtered) { item in
+                        LibraryCard(
+                            item: item,
+                            isSelected: item.id == state.selectedItemID,
+                            isQueued: state.isQueued(item.id),
+                            queuePosition: state.queuePosition(for: item.id, in: filtered),
+                            onTap: { handleItemTap(item) },
+                            onCopy: { copyFromLibrary(item) },
+                            onFavorite: { toggleFavorite(item) },
+                            onDelete: { deleteItem(item) }
+                        )
+                        .id(item.id)
+                    }
                 }
+                // Measure the grid itself (pre-padding) so keyboard column math sees the same
+                // width the adaptive layout does — the ScrollView is wider by the outer padding
+                // and, with legacy scroll bars, by the reserved bar width.
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    gridContainerWidth = width
+                }
+                .padding(LibraryGridMetrics.libraryGridPadding)
+                .padding(.bottom, state.pasteQueueCount > 0 ? 64 : 0)
+                .background(
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { state.selectedItemID = nil }
+                )
             }
-            .padding(16)
-            .padding(.bottom, state.pasteQueueCount > 0 ? 64 : 0)
-            .background(
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture { state.selectedItemID = nil }
-            )
+            .onChange(of: state.selectedItemID) { _, id in
+                // Default anchor scrolls just enough to reveal the card, so mouse selection of an
+                // already-visible item never shifts the scroll position.
+                guard let id else { return }
+                proxy.scrollTo(id)
+            }
         }
     }
 
@@ -345,6 +493,61 @@ struct LibraryWindow: View {
             description: Text(state.search.isEmpty ? "Copy something to get started." : "No matches.")
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - LibraryKeyHandler
+
+/// Arrow/Return/Space/Delete/Escape navigation for the Library window. Installed as a background
+/// view so the local monitor's lifetime tracks the window content (the presenter swaps the root
+/// view out on close, which tears the monitor down). The monitor only consumes events when this
+/// window is key and no text input owns focus — search, category rename, and detail-panel
+/// editing must keep every keystroke.
+private struct LibraryKeyHandler: NSViewRepresentable {
+    /// Returns true when the event was handled and must not propagate.
+    var handle: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> LibraryKeyHandlerView {
+        let v = LibraryKeyHandlerView()
+        v.handle = handle
+        return v
+    }
+
+    func updateNSView(_ nsView: LibraryKeyHandlerView, context: Context) {
+        nsView.handle = handle
+    }
+}
+
+private final class LibraryKeyHandlerView: NSView {
+    var handle: ((NSEvent) -> Bool)?
+    private var monitor: Any?
+
+    /// SwiftUI text fields edit through the window's field editor (an `NSTextView`, which is an
+    /// `NSText`); `TextEditor` is an `NSTextView` directly. One check covers both.
+    private static func isTextInputActive(in window: NSWindow) -> Bool {
+        window.firstResponder is NSText
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let window = self.window,
+                  event.window === window,
+                  window.isKeyWindow,
+                  !Self.isTextInputActive(in: window),
+                  // Bare keys only — modified combos (⌘⌫, ⌥-shortcuts, ⇧-arrows) keep their
+                  // existing meanings. Arrow keys always carry .function/.numericPad, so those
+                  // flags stay out of the mask.
+                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+            else { return event }
+            return (self.handle?(event) ?? false) ? nil : event
+        }
+    }
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
     }
 }
 
@@ -532,11 +735,15 @@ private struct LibraryCategoryTabBar: View {
             onRename: { newName in
                 cat.name = newName
                 try? context.save()
+                // Category names are searchable but live outside member items' modifiedAt —
+                // drop cached search text so the new name matches immediately.
+                ClipSearchRanker.invalidateHaystacks()
             },
             onDelete: {
                 if state.selection == .category(cat.id) { state.selection = .history }
                 context.delete(cat)
                 try? context.save()
+                ClipSearchRanker.invalidateHaystacks()
             }
         )
     }

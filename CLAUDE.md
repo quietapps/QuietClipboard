@@ -13,7 +13,7 @@ Native macOS clipboard history manager. Swift + SwiftUI. Saves everything copied
 - UI: SwiftUI (entire app)
 - Data: SwiftData with SQLite backing. Store at `~/Library/Application Support/QuietClipboard/`
 - Concurrency: async/await, actors. Clipboard monitor on background actor. Never block main thread.
-- Lifecycle: Menu bar app (`LSUIElement = true`). No Dock icon by default. UI surfaces: (1) menu bar popover [implemented], (2) notch shelf / Dynamic Island floating panel [**not implemented — planned**], (3) quick search overlay [implemented], (4) full Library window [implemented].
+- Lifecycle: Menu bar app (`LSUIElement = true`). No Dock icon by default. UI surfaces: (1) menu bar popover [implemented], (2) quick search overlay [implemented], (4) full Library window [implemented].
 - Single Xcode project, minimal external deps. Prefer Apple frameworks (Vision, LinkPresentation, NaturalLanguage).
 
 ## Core Data Model (SwiftData)
@@ -58,7 +58,6 @@ Native macOS clipboard history manager. Swift + SwiftUI. Saves everything copied
 - Capture enabled/paused
 - Content type filters
 - Sensitive detection enabled
-- Notch mode: `.notch` or `.dynamicIsland`
 - Max history size
 - Launch at login
 - Show in menu bar
@@ -107,33 +106,6 @@ Detect:
 - AWS, Stripe, Slack tokens
 
 Default: NOT saved. Settings: (a) don't save, (b) save but blur, (c) save normally.
-
-## Feature 3: Notch Shelf / Dynamic Island Panel
-
-> **Status: NOT IMPLEMENTED (planned).** No `Views/NotchPanel/` files, no `Ctrl+Cmd+N` binding, and no `.openNotch` shortcut action exist in code. This section describes intended design only. The Quick Search overlay (Feature 4) currently serves the fast drag/click-to-paste need.
-
-Floating panel at top center. Two modes:
-
-### Notch Mode
-- Panel extends from notch downward
-- Horizontal row of recent thumbnails
-- Drag and drop into any app
-- Hover preview, click to copy
-- Shortcut: `Ctrl+Cmd+N`
-
-### Dynamic Island Mode (default)
-- Compact pill at top center
-- Expands on hover or shortcut
-- Same drag/click behavior
-- Works on all Macs
-
-Both:
-- Last 5-10 items as cards
-- Drag/drop into any app
-- Click to paste
-- Right-click: favorite, delete, categorize, copy
-- Dismiss outside click / Escape
-- `NSPanel`, `.floating`, non-activating
 
 ## Feature 4: Quick Search Overlay
 
@@ -203,7 +175,6 @@ Icon states:
 | Action | Default |
 |--------|---------|
 | Open Quick Search | `Ctrl+Cmd+V` |
-| ~~Open Notch/Island~~ (not implemented) | `Ctrl+Cmd+N` |
 | Open Library | `Ctrl+Cmd+L` |
 | Paste clip 1-10 | `Ctrl+Cmd+0` … `Ctrl+Cmd+9` |
 | Toggle capture | `Ctrl+Cmd+P` |
@@ -238,19 +209,7 @@ LinkPresentation.
 - Rich card across all UI surfaces
 - Cache (no refetch same URL)
 - Fail gracefully → raw URL
-- ONLY network operation in app. Toggleable in Settings.
-
-## Feature 10: macOS Widgets
-
-> **Status: NOT IMPLEMENTED (planned).** There is no `Widgets/` target or `WidgetKit`/`AppIntents` code in the project. This section describes intended design only.
-
-WidgetKit.
-
-- Small: last 3 items, compact list. Tap → open + copy
-- Medium: last 6, 2-col grid with previews + type badge
-- Large: last 10-12 grid, Search button, category tabs
-
-Use `AppIntents` for interactivity on macOS 15.
+- ONLY network op
 
 ## Feature 11: Retention & Management
 
@@ -268,7 +227,6 @@ SwiftUI `Settings` scene. Tabs:
 ### General
 - Launch at login
 - Menu bar icon style
-- Notch/Island mode picker
 - Default view (grid/list)
 - Sound on copy
 
@@ -367,9 +325,6 @@ QuietClipboard/
 │   ├── MenuBar/
 │   │   ├── MenuBarView.swift
 │   │   └── MenuBarPopover.swift
-│   ├── NotchPanel/
-│   │   ├── NotchShelfView.swift
-│   │   └── DynamicIslandView.swift
 │   ├── QuickSearch/
 │   │   └── QuickSearchOverlay.swift
 │   ├── Library/
@@ -391,11 +346,6 @@ QuietClipboard/
 │       ├── ColorSwatchView.swift
 │       ├── CodePreviewView.swift
 │       └── LinkPreviewCard.swift
-├── Widgets/
-│   ├── QuietClipboardWidget.swift
-│   ├── SmallWidget.swift
-│   ├── MediumWidget.swift
-│   └── LargeWidget.swift
 ├── Utilities/
 │   ├── PasteboardHelper.swift
 │   ├── DateFormatting.swift
@@ -410,10 +360,8 @@ QuietClipboard/
 1. **Foundation**: SwiftData models, ClipboardMonitor, menu bar popover with recent clips. Text/image capture.
 2. **Library**: Full window, sidebar, grid/list, search, filter, favorites, detail.
 3. **Quick Search & Shortcuts**: overlay, global hotkeys, Ctrl+Cmd+0-9 paste, remapping UI.
-4. **Notch/Island**: shelf + island with drag/drop.
 5. **Intelligence**: sensitive detection, OCR, link previews, type-specific rendering.
 6. **Categories & Management**: custom categories, retention, export/import, storage.
-7. **Widgets & Polish**: WidgetKit, accessibility, animations, perf.
 
 ## Privacy
 

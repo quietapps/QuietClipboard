@@ -96,10 +96,9 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     func pauseUntilTomorrow() {
-        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        comps.day! += 1
-        comps.hour = 0; comps.minute = 0; comps.second = 0
-        if let tomorrow = Calendar.current.date(from: comps) {
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: .now)
+        if let tomorrow = cal.date(byAdding: .day, value: 1, to: startOfToday) {
             pause(for: max(1, tomorrow.timeIntervalSinceNow))
         }
     }
@@ -362,8 +361,20 @@ final class ClipboardMonitor: ObservableObject {
         switch type {
         case .image, .screenshot:
             if let ocr = await OCRService.recognizeText(in: payload.content) {
+                // Screenshots of credentials are a real leak vector: scan the recognized text
+                // the same way pasted text is scanned. OCR finishes after the item is saved,
+                // so honoring "Don't save" means deleting the just-captured clip; "Save but
+                // hide" redacts it in place.
+                let isSensitive = settings.sensitiveDetectionEnabled
+                    && settings.sensitiveBehavior != .saveNormal
+                    && SensitiveDetector.isSensitive(ocr, isConcealed: false)
+                if isSensitive, settings.sensitiveBehavior == .skip {
+                    await deleteSensitiveCapture(itemID: itemID, ocr: ocr)
+                    return
+                }
                 await applyUpdate(itemID: itemID) { item in
                     item.ocrText = ocr
+                    if isSensitive { item.isSensitive = true }
                 }
             }
         case .link:
@@ -385,6 +396,35 @@ final class ClipboardMonitor: ObservableObject {
             }
         default:
             break
+        }
+    }
+
+    /// Removes a just-captured clip whose OCR text turned out sensitive under the "Don't save"
+    /// policy. Runs on the main context: a background-context delete invalidates the model
+    /// instance the visible UI (Quick Search, popover) is rendering — instant crash on the
+    /// next property access. The clip is 1–2 s old and very likely on screen.
+    nonisolated private func deleteSensitiveCapture(itemID: UUID, ocr: String) async {
+        await MainActor.run {
+            let context = modelContainer.mainContext
+            var desc = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == itemID })
+            desc.fetchLimit = 1
+            guard let item = (try? context.fetch(desc))?.first else { return }
+            // The user may have favorited or pinned the clip during the OCR window — honor
+            // that explicit action by redacting in place instead of destroying their data.
+            if item.isFavorite || PinnedClipStore.shared.isPinned(item.id) {
+                item.ocrText = ocr
+                item.isSensitive = true
+                item.modifiedAt = .now
+                try? context.save()
+                return
+            }
+            context.delete(item)
+            do { try context.save() } catch {
+                NSLog("Sensitive capture delete failed: \(error)")
+                return
+            }
+            FeedbackHUD.shared.show("Sensitive screenshot not saved",
+                                    systemImage: "lock.fill", duration: 1.6)
         }
     }
 

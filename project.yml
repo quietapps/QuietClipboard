@@ -18,8 +18,8 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     GENERATE_INFOPLIST_FILE: NO
-    MARKETING_VERSION: "0.2.1"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "0.2.2"
+    CURRENT_PROJECT_VERSION: "1"
     CLANG_CXX_LANGUAGE_STANDARD: gnu++20
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
@@ -48,8 +48,8 @@ targets:
         CFBundleName: Quiet Clipboard
         CFBundleDisplayName: Quiet Clipboard
         CFBundleIdentifier: app.quiet.QuietClipboard
-        CFBundleShortVersionString: "0.2.1"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "0.2.2"
+        CFBundleVersion: "1"
         CFBundlePackageType: APPL
         LSMinimumSystemVersion: "15.0"
         LSUIElement: true
@@ -58,3 +58,44 @@ targets:
         NSRemindersFullAccessUsageDescription: "Create reminders from detected dates on your clipboard."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: app.quiet.QuietClipboard.backup
+            UTTypeDescription: Quiet Clipboard Backup
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - qcclips
+  # Standalone unit-test bundle — deliberately NO test host. Hosting tests in the app would
+  # launch the menu-bar app, start clipboard monitoring, and touch the user's real database
+  # under ~/Library/Application Support/QuietClipboard. Instead, the app sources under test
+  # (all free of app/model/UI dependencies) are compiled directly into the bundle. Keep this
+  # list explicit; if a file under test grows app-type dependencies, refactor the UI out of
+  # it rather than adding more sources here.
+  QuietClipboardTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: QuietClipboardTests
+      - path: QuietClipboard/Services/ImageTransformService.swift
+      - path: QuietClipboard/Services/OCRService.swift
+      - path: QuietClipboard/Services/SensitiveDetector.swift
+      - path: QuietClipboard/Utilities/ColorParsing.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.quiet.QuietClipboardTests
+        PRODUCT_NAME: QuietClipboardTests
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_HARDENED_RUNTIME: NO
+schemes:
+  QuietClipboard:
+    build:
+      targets:
+        QuietClipboard: all
+        QuietClipboardTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - QuietClipboardTests

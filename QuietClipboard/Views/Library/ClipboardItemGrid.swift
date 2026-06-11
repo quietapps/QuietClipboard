@@ -202,6 +202,8 @@ struct ItemContextMenu: View {
 
         TextTransformMenu(item: item)
 
+        ImageActionsMenu(item: item)
+
         if libraryState.isQueued(item.id) {
             Button {
                 libraryState.toggleQueue(item.id)

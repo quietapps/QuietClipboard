@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.1</string>
+	<string>0.2.2</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
 	<key>LSUIElement</key>
@@ -43,11 +43,16 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Quiet Clipboard item reference</string>
+			<string>Quiet Clipboard Backup</string>
 			<key>UTTypeIdentifier</key>
-			<string>app.quiet.QuietClipboard.item-id</string>
+			<string>app.quiet.QuietClipboard.backup</string>
 			<key>UTTypeTagSpecification</key>
-			<dict/>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qcclips</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

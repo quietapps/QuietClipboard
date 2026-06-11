@@ -87,6 +87,26 @@ struct LibraryDetailPanel: View {
                         .frame(minHeight: 120)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
 
+                    if isImageClip, !isRedacted {
+                        Spacer().frame(height: 10)
+
+                        Menu {
+                            ImageActionsMenu(item: item)
+                        } label: {
+                            Label("Image Actions", systemImage: "wand.and.stars")
+                                .font(.callout)
+                                .foregroundStyle(.white)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .pointerCursor()
+
+                        if let ocr = item.ocrText, !ocr.isEmpty {
+                            Spacer().frame(height: 10)
+                            ocrSection(ocr)
+                        }
+                    }
+
                     Spacer().frame(height: 10)
 
                     // CREATED
@@ -205,6 +225,50 @@ struct LibraryDetailPanel: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                 .padding(.trailing, -14)
         )
+    }
+
+    private var isImageClip: Bool {
+        item.contentType == .image || item.contentType == .screenshot
+    }
+
+    private var isRedacted: Bool {
+        item.isSensitive && !coordinator.isSensitiveRevealed(item.id)
+    }
+
+    /// Recognized text, rendered monospaced so the layout-preserved columns/indentation line
+    /// up, with copy actions for the exact and whitespace-cleaned forms.
+    private func ocrSection(_ ocr: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("TEXT IN IMAGE")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+            ScrollView([.horizontal, .vertical]) {
+                Text(ocr)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 160)
+            .padding(8)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            HStack(spacing: 8) {
+                Button {
+                    coordinator.copyOCRText(item, cleaned: false)
+                } label: {
+                    Label("Copy Exact", systemImage: "text.alignleft")
+                }
+                .pointerCursor()
+                Button {
+                    coordinator.copyOCRText(item, cleaned: true)
+                } label: {
+                    Label("Copy Cleaned", systemImage: "text.badge.checkmark")
+                }
+                .pointerCursor()
+            }
+            .controlSize(.small)
+        }
     }
 
     @ViewBuilder

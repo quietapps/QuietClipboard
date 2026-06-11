@@ -25,13 +25,31 @@ enum PasteSimulator {
     static func performPaste(priorApp: NSRunningApplication?, afterPaste: (() -> Void)? = nil) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             priorApp?.activate(options: [])
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            waitForActivation(of: priorApp) {
                 guard ensureAccessibility() else { return }   // leave clip on pasteboard for manual paste
                 postCommandV()
                 if let afterPaste {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: afterPaste)
                 }
             }
+        }
+    }
+
+    /// Polls until `app` reports active (up to ~600ms), then runs `action` after a short settle
+    /// delay. A fixed delay drops keystrokes when activation is slow (heavy apps, busy system);
+    /// polling pastes as soon as the target can receive the event. Falls through and runs the
+    /// action anyway at the deadline so a paste is always attempted.
+    private static func waitForActivation(of app: NSRunningApplication?,
+                                          attemptsLeft: Int = 20,
+                                          then action: @escaping @MainActor () -> Void) {
+        guard let app, !app.isActive, attemptsLeft > 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                MainActor.assumeIsolated(action)
+            }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+            waitForActivation(of: app, attemptsLeft: attemptsLeft - 1, then: action)
         }
     }
 
@@ -43,7 +61,7 @@ enum PasteSimulator {
     /// Types plain text character-by-character for apps that block paste (banking, RDP).
     static func typeIntoApp(_ text: String, priorApp: NSRunningApplication?) {
         priorApp?.activate(options: [])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        waitForActivation(of: priorApp) {
             guard ensureAccessibility() else { return }
             DispatchQueue.global(qos: .userInitiated).async {
                 typeTextSynchronously(text)

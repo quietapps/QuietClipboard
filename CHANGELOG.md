@@ -7,6 +7,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
 
+## [0.2.2] — 2026-06-11
+
+Version **0.2.2**
+
+### Build 1
+
+#### Added
+
+- **Copy text from images** — image and screenshot clips now offer "Copy Text from Image" with two modes: **Exact Layout** (preserves the indentation, column alignment, and blank lines as they appear in the image) and **Cleaned Up** (normalized whitespace, single blank lines). Available from the right-click menu in Quick Search and the Library, and as buttons in the detail panel's "Text in Image" section.
+- **Layout-preserving OCR** — recognized text is reconstructed from the Vision bounding boxes onto a character grid: indentation, column gaps, and paragraph breaks now mirror the source image instead of collapsing into one line per fragment. The detail panel renders it in a monospaced font so columns line up.
+- **Image actions** — right-click any image or screenshot clip:
+  - **Resize & Copy** — 75% / 50% / 25%, or fit the longest side to 2048/1024/512/256 px; the result lands on the clipboard (and in history) as PNG.
+  - **Remove Background** — on-device subject lift via Vision; copies a transparent-background PNG.
+  - **Convert & Save** — export as PNG, JPEG (transparency flattened to white), or TIFF via a save panel.
+- **Library keyboard navigation** — arrow keys move the selection through the grid (column-aware), Return copies the selected clip, Space opens Quick Look, Delete removes the clip and keeps the selection useful, Escape closes the detail panel. Selection scrolls into view; keys are ignored while typing in the search or rename fields.
+- **Quick Search filter cycling** — Tab / Shift+Tab cycle the content-type filter chips (including "All") without leaving the keyboard; an active category filter is kept, mirroring a chip tap.
+- **First automated test suite** — a standalone unit-test bundle (36 tests) covering the sensitive-content detector, OCR text cleanup, OCR layout reconstruction (real Vision pass over a rendered image), image resize/convert/background-removal, and color parsing. Runs via `xcodebuild test`; never touches the real clipboard database.
+- **Compressed backups** — export now writes a compressed `.qcclips` file (zlib, typically 2–5× smaller than the old JSON). Old plain-JSON backups still import. Imports are version-guarded (a backup from a newer app version fails with a clear message instead of corrupting), integrity-checked (truncated files are detected, with Cancel as the safe default), and bounded against decompression bombs. Export/import no longer block the UI.
+- **Detail panel: text-in-image tools** — the Library detail panel now shows recognized text for images/screenshots in a monospaced block with "Copy Exact" / "Copy Cleaned" buttons, plus an Image Actions menu (resize, remove background, convert).
+
+#### Changed
+
+- **Quick Search opens instantly and stays smooth** — the on-open list now comes from an index-backed database fetch that touches only the rows actually shown, instead of materializing and sorting the entire history (which loaded every image blob); the overlay no longer recomputes its list on every clipboard capture while hidden; and search-text caching no longer walks each clip's categories on every keystroke. Recent clips' search text is pre-warmed in the background after launch so the first search keystroke doesn't stall.
+- **Faster search on large histories** — per-item search text is now derived once and cached (bounded), per-field scanning is capped at 16 K characters, and extending a query (typing more characters) narrows the scan instead of re-scanning the full history. Ranking order is unchanged.
+- **Sensitive screenshots under "Don't save"** — when sensitive detection is set to "Don't save" and OCR finds a secret in a just-captured screenshot, the clip is now removed from history (with a brief notice) instead of being kept hidden. If you favorited or pinned it in the meantime, it is kept but redacted.
+- **Focus returns to your app** — closing Quick Search with Escape, the hotkey, or by choosing a clip now hands focus back to the app you were in, so ⌘V works immediately in copy-only mode. Clicking into another app still leaves focus where you clicked.
+- **More reliable auto-paste** — instead of a fixed 50 ms delay, the paste keystroke now waits until the target app actually reports active (up to ~600 ms), so pastes no longer drop when a heavy app is slow to come forward. Auto-type uses the same wait.
+- **Faster database queries** — added SQLite indexes on the dedupe hash, timestamps, and content type, removing full-table scans from capture dedupe and list sorting/filtering as history grows.
+- Removed dead `ItemDetailView` (superseded by the Library detail panel).
+
+#### Security
+
+- **Sensitive detection now covers screenshots** — recognized text from images runs through the same secret/credential scanner as pasted text; a screenshot of an API key or card number is treated like any other sensitive clip (unless behavior is set to "Save normally").
+- **Quick Look respects redaction** — pressing Space (or choosing Quick Look) on a hidden sensitive clip now reveals it deliberately first, instead of rendering the full-size content in one keypress.
+- **Backup import hardening** — file-size cap, streaming zlib inflate with an output ceiling (a crafted small file can no longer balloon to gigabytes in memory), and a safe-default alert for truncated backups.
+- Removed force-unwraps and `try!` in the capture path and sensitive detector (crash hardening).
+
+---
+
 ## [0.2.1] — 2026-06-08
 
 Version **0.2.1**

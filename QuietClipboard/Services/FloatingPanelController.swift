@@ -30,7 +30,7 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
 
     func toggle() {
         if let panel, panel.isVisible {
-            hide()
+            hide(restoreFocus: true)
         } else {
             show()
         }
@@ -52,7 +52,12 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
         installDismissMonitors()
     }
 
-    func hide() {
+    /// Hides the panel. Pass `restoreFocus: true` when the dismissal originates inside the panel
+    /// (Escape, copy/paste action, hotkey toggle) so keyboard focus returns to the app the user
+    /// was in — they can press ⌘V immediately. Leave it `false` when the user already switched
+    /// to another app (mouse click outside, app deactivation), where re-activating the prior app
+    /// would steal focus from where they intentionally went.
+    func hide(restoreFocus: Bool = false) {
         removeDismissMonitors()
         if let frame = panel?.frame {
             MainActor.assumeIsolated {
@@ -61,7 +66,16 @@ final class FloatingPanelController<Content: View>: NSObject, NSWindowDelegate {
             }
         }
         panel?.orderOut(nil)
+        if restoreFocus { restorePriorAppFocus() }
         // Panel kept alive for instant reopen — no rebuild overhead on next show.
+    }
+
+    private func restorePriorAppFocus() {
+        guard let app = priorApp,
+              !app.isTerminated,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              NSApp.isActive else { return }
+        app.activate(options: [])
     }
 
     func resetSize() {

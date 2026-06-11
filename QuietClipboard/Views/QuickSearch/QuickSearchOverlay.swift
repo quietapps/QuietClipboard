@@ -105,6 +105,12 @@ struct QuickSearchOverlay: View {
             try? await Task.sleep(nanoseconds: 60_000_000)
             searchFocused = true
         }
+        .task {
+            // Runs once when the panel is prebuilt (1.5 s after launch, hidden): derive the
+            // search haystacks ahead of time so the first keystroke doesn't stall on
+            // lowercasing + row-faulting the whole recent history in a single frame.
+            await ClipSearchRanker.prewarmHaystacks(allItems)
+        }
         .background(KeyHandler(
             onEnter: activate,
             onEscape: onDismiss,
@@ -122,7 +128,8 @@ struct QuickSearchOverlay: View {
             onDelete: deleteSelected,
             onPin: pinSelected,
             onType: typeSelected,
-            onPlainEnter: activatePlain
+            onPlainEnter: activatePlain,
+            onCycleFilter: { cycleTypeFilter(forward: $0) }
         ))
         .onExitCommand {
             if !multiSelectedIDs.isEmpty {
@@ -331,6 +338,10 @@ struct QuickSearchOverlay: View {
     }
 
     private func scheduleFilterRefresh() {
+        // The overlay stays alive while hidden (instant reopen), so captures and coordinator
+        // changes keep arriving — recomputing the list for an invisible panel is pure waste
+        // and makes every copy stutter. resetState() rebuilds the list on the next show.
+        guard coordinator.isQuickSearchPanelVisible else { return }
         filterTask?.cancel()
         let delay: UInt64 = search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 100_000_000
         filterTask = Task { @MainActor in
@@ -344,6 +355,19 @@ struct QuickSearchOverlay: View {
 
     private func refreshDisplayItems() {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let limit = Preferences.quickSearchListLimit
+
+        // Fast path for the list everyone sees on open (no search, simple filters): an
+        // index-backed fetch realizes only the `limit` rows shown, instead of touching the
+        // sort key on every row in history — full-row faults include image blobs, so the
+        // in-memory sort made open time scale with library size.
+        if q.isEmpty, !pinnedOnly, categoryFilter == nil,
+           let fetched = fetchRecentItems(limit: limit) {
+            displayItems = fetched
+            selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
+            return
+        }
+
         var items = allItems
         if let t = typeFilter { items = items.filter { $0.contentType == t } }
         if favoritesOnly { items = items.filter(\.isFavorite) }
@@ -354,16 +378,40 @@ struct QuickSearchOverlay: View {
         if let cid = categoryFilter {
             items = items.filter { $0.categories.contains { $0.id == cid } }
         }
-        let limit = Preferences.quickSearchListLimit
         if !q.isEmpty {
             displayItems = Array(ClipSearchMatcher.ranked(items, query: q).prefix(limit))
         } else {
+            // Decorate-sort-undecorate: read the computed sort key ONCE per item rather than
+            // twice per comparison.
             displayItems = items
-                .sorted { $0.effectiveLastCopiedAt > $1.effectiveLastCopiedAt }
+                .map { (item: $0, key: $0.effectiveLastCopiedAt) }
+                .sorted { $0.key > $1.key }
                 .prefix(limit)
-                .map { $0 }
+                .map(\.item)
         }
         selectedIndex = min(selectedIndex, max(0, displayItems.count - 1))
+    }
+
+    /// Most-recently-copied items straight from SQLite (lastCopiedAt is indexed), honoring the
+    /// type/favorites filters as predicates. Returns nil when the fetch fails so the caller can
+    /// fall back to the in-memory path. `lastCopiedAt` is set on every insert/copy and backfilled
+    /// by migration and import, so the nil-fallback to `createdAt` only matters in-memory.
+    private func fetchRecentItems(limit: Int) -> [ClipboardItem]? {
+        var desc = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.lastCopiedAt, order: .reverse)]
+        )
+        if let t = typeFilter {
+            let raw = t.rawValue
+            if favoritesOnly {
+                desc.predicate = #Predicate { $0.contentTypeRaw == raw && $0.isFavorite }
+            } else {
+                desc.predicate = #Predicate { $0.contentTypeRaw == raw }
+            }
+        } else if favoritesOnly {
+            desc.predicate = #Predicate { $0.isFavorite }
+        }
+        desc.fetchLimit = limit
+        return try? context.fetch(desc)
     }
 
     private func clampedPreviewWidth(_ total: CGFloat) -> CGFloat {
@@ -426,9 +474,9 @@ struct QuickSearchOverlay: View {
 
     private var bottomBarHint: String {
         if pinnedOnly {
-            return "Pinned · ⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
+            return "Pinned · ⇥ filter · ⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
         }
-        return "⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
+        return "⇥ filter · ⌥P pin · ⌥F fav · ⌥D del · ⌥T type"
     }
 
     private var isFiltered: Bool {
@@ -481,6 +529,25 @@ struct QuickSearchOverlay: View {
 
     private func togglePin(_ item: ClipboardItem) {
         coordinator.pinned.togglePin(itemID: item.id)
+    }
+
+    /// Tab / ⇧Tab cycle the type-filter chips in their displayed order with "All" (nil) in the
+    /// loop. Driven from the key monitor so it works regardless of which control has focus.
+    private func cycleTypeFilter(forward: Bool) {
+        let enabled = QuickSearchFilterPreferences.enabledFilters
+        let types = QuickSearchPopupFilter.allCases
+            .filter { $0 != .favorites && $0 != .pinned && enabled.contains($0) }
+            .compactMap(\.contentType)
+        let states: [ClipboardContentType?] = [nil] + types.map(Optional.init)
+        guard states.count > 1 else { return }
+        let current = states.firstIndex(of: typeFilter) ?? 0
+        let next = (current + (forward ? 1 : -1) + states.count) % states.count
+        typeFilter = states[next]
+        // Mirror a chip tap exactly: favorites/pinned are exclusive modes and clear, but an
+        // active category filter composes with the type filter and stays.
+        favoritesOnly = false
+        pinnedOnly = false
+        selectedIndex = 0
     }
 
     private func deleteItem(_ item: ClipboardItem) {
@@ -871,6 +938,7 @@ struct KeyHandler: NSViewRepresentable {
     var onPin: (() -> Void)?
     var onType: (() -> Void)?
     var onPlainEnter: (() -> Void)?
+    var onCycleFilter: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> KeyHandlerView {
         let v = KeyHandlerView()
@@ -883,6 +951,7 @@ struct KeyHandler: NSViewRepresentable {
         v.onPin = onPin
         v.onType = onType
         v.onPlainEnter = onPlainEnter
+        v.onCycleFilter = onCycleFilter
         return v
     }
 
@@ -896,6 +965,7 @@ struct KeyHandler: NSViewRepresentable {
         nsView.onPin = onPin
         nsView.onType = onType
         nsView.onPlainEnter = onPlainEnter
+        nsView.onCycleFilter = onCycleFilter
     }
 }
 
@@ -909,6 +979,7 @@ final class KeyHandlerView: NSView {
     var onPin: (() -> Void)?
     var onType: (() -> Void)?
     var onPlainEnter: (() -> Void)?
+    var onCycleFilter: ((Bool) -> Void)?
 
     private var monitor: Any?
 
@@ -923,6 +994,10 @@ final class KeyHandlerView: NSView {
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            // The Quick Search panel is prebuilt and kept alive while hidden, so this app-wide
+            // local monitor outlives visibility. Only handle keys routed to our own window —
+            // otherwise Return/arrows typed in the Library or Settings would be swallowed here.
+            guard let window = self.window, event.window === window else { return event }
             if Self.isOptionOnly(event) {
                 switch event.keyCode {
                 case 3: // F
@@ -951,6 +1026,14 @@ final class KeyHandlerView: NSView {
                 self.onUp?(); return nil
             case 125: // down
                 self.onDown?(); return nil
+            case 48: // tab — cycle type-filter chips; ⇧⇥ cycles backwards. The search field
+                     // doesn't use tab for completion, so intercepting is safe even while typing.
+                if let onCycleFilter = self.onCycleFilter,
+                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+                    onCycleFilter(!event.modifierFlags.contains(.shift))
+                    return nil
+                }
+                return event
             default: return event
             }
         }

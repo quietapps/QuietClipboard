@@ -104,7 +104,7 @@ final class AppCoordinator: ObservableObject {
                     QuickSearchOverlay(
                         onPaste: { item in self?.pasteFromQuickSearch(item) },
                         onPlainPaste: { item in self?.pasteFromQuickSearch(item, asPlainText: true) },
-                        onDismiss: { self?.quickSearch?.hide() },
+                        onDismiss: { self?.quickSearch?.hide(restoreFocus: true) },
                         onOpenLibrary: {
                             self?.quickSearch?.hide()
                             self?.openLibraryWindow()
@@ -178,6 +178,12 @@ final class AppCoordinator: ObservableObject {
         quickSearch?.resetSize()
     }
 
+    /// Whether the Quick Search panel is currently on screen. The overlay view stays alive
+    /// while hidden and uses this to skip list-refresh work nobody can see.
+    var isQuickSearchPanelVisible: Bool {
+        quickSearch?.isVisible ?? false
+    }
+
     private func toggleQuickSearch() {
         // AX is checked at launch; not re-checked here so opening stays instant. Paste-time guard
         // in `pasteFromQuickSearch` handles late-revoked permission by falling back to copy-only.
@@ -202,7 +208,9 @@ final class AppCoordinator: ObservableObject {
     func pasteFromQuickSearch(_ item: ClipboardItem, asPlainText: Bool = false) {
         guard shouldProceedWithSensitiveAction(for: item) else { return }
         let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
-        quickSearch?.hide()
+        // Restore focus to the prior app on dismiss — in the copy-only path the user must be
+        // able to press ⌘V right away without clicking back into their window.
+        quickSearch?.hide(restoreFocus: true)
         let context = ModelContext(container)
 
         // Copy-only path: auto-paste disabled OR Accessibility missing. Skips the activate +
@@ -250,7 +258,7 @@ final class AppCoordinator: ObservableObject {
             return
         }
         let prior = quickSearch?.priorApp ?? PasteSimulator.capturedFrontmost()
-        quickSearch?.hide()
+        quickSearch?.hide(restoreFocus: true)
         let context = ModelContext(container)
         ClipboardItemDelivery.deliverWithAutoType(text, item: item, priorApp: prior, context: context, monitor: monitor)
     }
@@ -303,5 +311,71 @@ final class AppCoordinator: ObservableObject {
         let context = ModelContext(container)
         let prior = PasteSimulator.capturedFrontmost()
         ClipboardItemDelivery.deliverWithAutoType(text, item: item, priorApp: prior, context: context, monitor: monitor)
+    }
+
+    // MARK: - Image clip actions
+
+    /// Copies the OCR text of an image clip — either the layout-preserved form (exact
+    /// indentation/columns as seen in the image) or a whitespace-cleaned form. The write is
+    /// intentionally NOT acknowledged so the monitor captures it as a new text clip.
+    func copyOCRText(_ item: ClipboardItem, cleaned: Bool) {
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
+        guard let ocr = item.ocrText, !ocr.isEmpty else { return }
+        let text = cleaned ? OCRService.cleanedText(from: ocr) : ocr
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        FeedbackHUD.shared.show(cleaned ? "Cleaned text copied" : "Text copied (exact layout)",
+                                systemImage: "text.viewfinder", duration: 1.0)
+    }
+
+    enum ImageClipAction {
+        case resize(ImageTransformService.ResizeOption)
+        case removeBackground
+    }
+
+    /// Runs a transform on an image clip and puts the result on the pasteboard as PNG. The
+    /// write is NOT acknowledged so the monitor ingests it as a new clip (with thumbnail,
+    /// OCR, and dedupe via the normal pipeline).
+    func performImageAction(_ item: ClipboardItem, action: ImageClipAction) {
+        guard shouldProceedWithSensitiveAction(for: item) else { return }
+        guard item.contentType == .image || item.contentType == .screenshot else { return }
+        let data = item.content
+        if case .removeBackground = action {
+            FeedbackHUD.shared.show("Removing background…", systemImage: "wand.and.stars", duration: 1.4)
+        }
+        Task { [weak self] in
+            let result: Data?
+            let successMessage: String
+            switch action {
+            case .resize(let option):
+                result = await Task.detached(priority: .userInitiated) {
+                    ImageTransformService.resized(data, option: option)
+                }.value
+                successMessage = "Resized image copied"
+            case .removeBackground:
+                result = await ImageTransformService.removingBackground(data)
+                successMessage = "Background removed — image copied"
+            }
+            await MainActor.run {
+                guard self != nil else { return }
+                guard let result else {
+                    let message: String
+                    if case .removeBackground = action {
+                        message = "No subject found to cut out"
+                    } else {
+                        message = "Couldn’t process image"
+                    }
+                    FeedbackHUD.shared.show(message,
+                                            systemImage: "exclamationmark.triangle.fill",
+                                            isWarning: true, duration: 1.6)
+                    return
+                }
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setData(result, forType: .png)
+                FeedbackHUD.shared.show(successMessage, systemImage: "checkmark.circle.fill", duration: 1.1)
+            }
+        }
     }
 }

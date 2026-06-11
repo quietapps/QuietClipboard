@@ -19,6 +19,8 @@ struct PopupItemContextMenu: View {
         }
         if QuickLookPreview.canPreview(item) {
             Button {
+                // Quick Look renders full-size; hidden sensitive clips reveal on first press.
+                guard coordinator.shouldProceedWithSensitiveAction(for: item) else { return }
                 QuickLookPreview.show(for: item)
             } label: {
                 Label("Quick Look", systemImage: "eye")
@@ -33,5 +35,6 @@ struct PopupItemContextMenu: View {
             }
         }
         TextTransformMenu(item: item)
+        ImageActionsMenu(item: item)
     }
 }

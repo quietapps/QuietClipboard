@@ -3,6 +3,10 @@ import SwiftData
 
 @Model
 final class ClipboardItem {
+    // Dedupe lookups hit contentHash on every capture; list views sort on the timestamps and
+    // filter on the type column. Without these, each is a full table scan.
+    #Index<ClipboardItem>([\.contentHash], [\.createdAt], [\.lastCopiedAt], [\.contentTypeRaw])
+
     @Attribute(.unique) var id: UUID
     var content: Data
     var contentHash: String = ""

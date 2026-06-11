@@ -106,11 +106,11 @@ struct StorageSettingsTab: View {
 
             SettingsCard(
                 title: "Backup",
-                footer: "Full history export for backup or moving to another Mac."
+                footer: "Full history backup as a compressed .qcclips file for safekeeping or moving to another Mac. Import accepts .qcclips and older .json exports."
             ) {
                 HStack(alignment: .center, spacing: 10) {
                     SettingsActionButton(
-                        title: "Export JSON",
+                        title: "Export Backup…",
                         systemImage: "square.and.arrow.up",
                         variant: .secondary
                     ) {
@@ -119,7 +119,7 @@ struct StorageSettingsTab: View {
                     .frame(maxWidth: .infinity)
 
                     SettingsActionButton(
-                        title: "Import JSON",
+                        title: "Import Backup…",
                         systemImage: "square.and.arrow.down",
                         variant: .secondary
                     ) {
@@ -198,24 +198,32 @@ struct StorageSettingsTab: View {
     }
 
     private func exportAction() {
-        do {
-            let url = try ExportImportService.export(container: coordinator.container)
-            ExportImportService.presentSavePanel(url)
-            status = .success("Export ready to save.")
-        } catch {
-            status = .error("Export failed: \(error.localizedDescription)")
+        Task { @MainActor in
+            do {
+                let result = try await ExportImportService.export(container: coordinator.container)
+                ExportImportService.presentSavePanel(result.url, itemCount: result.itemCount)
+                status = .success("Export ready to save.")
+            } catch {
+                status = .error("Export failed: \(error.localizedDescription)")
+            }
         }
     }
 
     private func importAction() {
         ExportImportService.presentOpenPanel { url in
             guard let url else { return }
-            do {
-                let count = try ExportImportService.importFrom(url, container: coordinator.container)
-                refreshMetrics()
-                status = .success("Imported \(count) clip\(count == 1 ? "" : "s").")
-            } catch {
-                status = .error("Import failed: \(error.localizedDescription)")
+            Task { @MainActor in
+                do {
+                    let count = try await ExportImportService.importFrom(url, container: coordinator.container)
+                    refreshMetrics()
+                    status = .success("Imported \(count) clip\(count == 1 ? "" : "s").")
+                } catch ExportImportError.importCancelled {
+                    status = .info("Import canceled.")
+                } catch {
+                    // Version-mismatch and truncation paths already surfaced an alert;
+                    // the banner keeps the detail visible after it closes.
+                    status = .error("Import failed: \(error.localizedDescription)")
+                }
             }
         }
     }

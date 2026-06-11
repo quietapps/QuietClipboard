@@ -25,11 +25,11 @@ enum SensitiveDetector {
         return raw.compactMap { try? NSRegularExpression(pattern: $0) }
     }()
 
-    private static let envKeyPattern = try! NSRegularExpression(
+    private static let envKeyPattern: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"(?i)(SECRET|PASSWORD|TOKEN|API[_-]?KEY|DATABASE_URL|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_]*\s*=\s*\S{4,}"#
     )
 
-    private static let ccCandidateRegex = try! NSRegularExpression(
+    private static let ccCandidateRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: #"(?<![0-9])(?:[0-9][ -]?){13,19}(?![0-9])"#
     )
 
@@ -48,12 +48,13 @@ enum SensitiveDetector {
         for re in patterns {
             if re.firstMatch(in: scanned, range: nsr) != nil { return true }
         }
-        if envKeyPattern.firstMatch(in: scanned, range: nsr) != nil { return true }
+        if envKeyPattern?.firstMatch(in: scanned, range: nsr) != nil { return true }
         if containsCreditCard(scanned) { return true }
         return false
     }
 
     private static func containsCreditCard(_ text: String) -> Bool {
+        guard let ccCandidateRegex else { return false }
         let ns = text as NSString
         let matches = ccCandidateRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         for m in matches {
