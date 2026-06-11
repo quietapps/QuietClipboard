@@ -48,3 +48,7 @@ Carthage/Build/
 
 # Local tooling
 .claude/
+
+# Release artifacts (uploaded to GitHub Releases, not committed)
+QuietClipboard-*.zip
+.release-notes-*.md

@@ -144,7 +144,7 @@ cd /Users/parth/Projects/Apps/QuietClipboard
 ```bash
 cd /Users/parth/Projects/Apps/QuietClipboard
 
-git add CHANGELOG.md README.md project.yml QuietClipboard.xcodeproj/project.pbxproj ".release-notes-${VERSION}.md"
+git add CHANGELOG.md README.md project.yml QuietClipboard.xcodeproj/project.pbxproj
 git add QuietClipboard/
 git status
 git commit -m "$(cat <<EOF
