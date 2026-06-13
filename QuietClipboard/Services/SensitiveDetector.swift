@@ -44,20 +44,22 @@ enum SensitiveDetector {
         } else {
             scanned = text
         }
-        let nsr = NSRange(scanned.startIndex..., in: scanned)
+        let nsr = safeFullNSRange(in: scanned)
         for re in patterns {
-            if re.firstMatch(in: scanned, range: nsr) != nil { return true }
+            if let nsr, re.firstMatch(in: scanned, range: nsr) != nil { return true }
         }
-        if envKeyPattern?.firstMatch(in: scanned, range: nsr) != nil { return true }
+        if let nsr, envKeyPattern?.firstMatch(in: scanned, range: nsr) != nil { return true }
         if containsCreditCard(scanned) { return true }
         return false
     }
 
     private static func containsCreditCard(_ text: String) -> Bool {
         guard let ccCandidateRegex else { return false }
+        guard let range = safeFullNSRange(in: text) else { return false }
+        let matches = ccCandidateRegex.matches(in: text, range: range)
         let ns = text as NSString
-        let matches = ccCandidateRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         for m in matches {
+            guard m.range.location != NSNotFound, NSMaxRange(m.range) <= ns.length else { continue }
             let raw = ns.substring(with: m.range)
             let digits = raw.compactMap { $0.wholeNumberValue }
             guard digits.count >= 13, digits.count <= 19, luhnValid(digits) else { continue }
@@ -81,5 +83,12 @@ enum SensitiveDetector {
             }
         }
         return sum % 10 == 0
+    }
+
+    /// Builds an NSRange covering the full string without trapping on malformed bridged strings.
+    private static func safeFullNSRange(in text: String) -> NSRange? {
+        let ns = text as NSString
+        guard ns.length > 0 else { return nil }
+        return NSRange(location: 0, length: ns.length)
     }
 }

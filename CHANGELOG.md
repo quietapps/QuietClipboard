@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
 
+## [0.2.3] — 2026-06-12
+
+Version **0.2.3**
+
+### Build 1
+
+#### Changed
+
+- **Large clipboard capture no longer blocks or kills the app** — the monitor now reads only pasteboard types and metadata on the main thread; heavy payloads (images, long text, RTF) load on a background thread with strict size limits. Oversized items show a brief warning instead of silently crashing.
+- **Images over 8 MB are downscaled on ingest** — stored as a usable PNG (up to 2048 px) rather than retaining the full multi‑megabyte blob in memory twice.
+- **Auto-categorization scans are bounded** — NLP and regex passes cap text at 4–16 K characters so huge clips don't stall capture enrichment.
+
+#### Fixed
+
+- **Crash on large copies** — fixed out-of-memory kills when copying big images or long text to the clipboard; the app no longer exits and leave capture silently dead.
+- **String index crash in auto-categorization** — `NLTagger` was given a 4 K prefix but walked indices over the full clip, causing a fatal `StringUTF16View` error on large captures when auto-categorization is enabled.
+- **Pasteboard text decoding** — clipboard strings now decode via AppKit's native pasteboard API instead of forced UTF-8, fixing garbled text and downstream regex crashes on UTF-16 payloads.
+- **Regex range safety** — IBAN extraction, credit-card scanning, and structured-data detection now build `NSRange` from the same string they search, preventing index-out-of-bounds traps on edge-case Unicode.
+
+---
+
 ## [0.2.2] — 2026-06-11
 
 Version **0.2.2**

@@ -147,9 +147,11 @@ enum CategorySuggestionService {
     }
 
     private static func combinedText(for item: ClipboardItem) -> String {
-        [item.textContent, item.ocrText, item.title, item.linkPreviewTitle]
-            .compactMap { $0 }
-            .joined(separator: "\n")
+        let parts = [item.textContent, item.ocrText, item.title, item.linkPreviewTitle].compactMap { $0 }
+        guard !parts.isEmpty else { return "" }
+        let joined = parts.joined(separator: "\n")
+        // Keep categorization scans bounded — large clips + OCR can exceed 1 MB of text.
+        return joined.count > 16_384 ? String(joined.prefix(16_384)) : joined
     }
 
     private static func matchesAPIKey(_ text: String) -> Bool {
@@ -170,13 +172,14 @@ enum CategorySuggestionService {
     }
 
     private static func mlTopicLabel(for text: String) -> (name: String, icon: String, color: String, confidence: Double)? {
-        guard text.count >= 40 else { return nil }
+        let scanned = String(text.prefix(4000))
+        guard scanned.count >= 40 else { return nil }
         let tagger = NLTagger(tagSchemes: [.lexicalClass])
-        tagger.string = String(text.prefix(4000))
+        tagger.string = scanned
         var nouns: [String] = []
-        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass) { tag, range in
+        tagger.enumerateTags(in: scanned.startIndex..<scanned.endIndex, unit: .word, scheme: .lexicalClass) { tag, range in
             if tag == .noun {
-                nouns.append(String(text[range]).lowercased())
+                nouns.append(String(scanned[range]).lowercased())
             }
             return true
         }

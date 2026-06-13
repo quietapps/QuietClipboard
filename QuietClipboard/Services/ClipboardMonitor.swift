@@ -161,13 +161,8 @@ final class ClipboardMonitor: ObservableObject {
         if current == lastChangeCount { return }
         lastChangeCount = current
 
-        let snap = PasteboardHelper.snapshot(pb)
+        let snap = PasteboardHelper.lightweightSnapshot(pb)
         guard !snap.isConcealed, !snap.isTransient else { return }
-
-        // Yield after the blocking pasteboard IPC read (can be 20-100ms for large images)
-        // so any shortcut handler queued during that read runs immediately, before the
-        // rest of tick()'s work. The new item gets ingested concurrently via Task.detached.
-        await Task.yield()
 
         let settings = CaptureSettings()
         guard !snap.isUniversalClipboard || settings.captureUniversalClipboard else { return }
@@ -183,11 +178,32 @@ final class ClipboardMonitor: ObservableObject {
             return
         }
 
+        let roughType = ContentTypeDetector.detect(snap)
+        guard settings.isTypeCaptured(roughType) else { return }
+
         let priorHash = lastContentHash
+        let expectedChangeCount = snap.changeCount
 
         Task.detached(priority: .utility) { [weak self] in
+            var hydrated = snap
+            let hydration = PasteboardHelper.hydrateHeavyContent(&hydrated, from: .general)
+            switch hydration {
+            case .clipboardChanged:
+                return
+            case .tooLarge:
+                await MainActor.run {
+                    FeedbackHUD.shared.show("Clipboard item too large to save",
+                                            systemImage: "exclamationmark.triangle.fill",
+                                            isWarning: true,
+                                            duration: 2.4)
+                }
+                return
+            case .ok:
+                break
+            }
+            guard hydrated.changeCount == expectedChangeCount else { return }
             await self?.backgroundIngest(
-                snap: snap, bundleID: bundleID, appName: appName,
+                snap: hydrated, bundleID: bundleID, appName: appName,
                 priorHash: priorHash, settings: settings
             )
         }
@@ -203,6 +219,7 @@ final class ClipboardMonitor: ObservableObject {
         settings: CaptureSettings
     ) async {
         var type = ContentTypeDetector.detect(snap)
+        guard settings.isTypeCaptured(type) else { return }
         // Full-screen captures match a display's exact pixel size — tag them as screenshots so
         // the Screenshots section/filter/retention are actually reachable. Region grabs that don't
         // match a screen stay `.image` (no reliable clipboard marker exists for those).
@@ -215,7 +232,7 @@ final class ClipboardMonitor: ObservableObject {
             type = .screenshot
         }
         guard settings.isTypeCaptured(type) else { return }
-        guard let payload = Self.buildPayload(snap: snap, type: type) else { return }
+        guard let payload = autoreleasepool(invoking: { Self.buildPayload(snap: snap, type: type) }) else { return }
 
         let hash = Self.hash(payload.content)
         guard hash != priorHash else { return }

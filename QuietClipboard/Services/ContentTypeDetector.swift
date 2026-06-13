@@ -5,14 +5,20 @@ enum ContentTypeDetector {
         if !snap.fileURLs.isEmpty {
             return .file
         }
-        if snap.png != nil || snap.tiff != nil {
+        if snap.png != nil || snap.tiff != nil || PasteboardHelper.isBitmapDominant(types: snap.types) {
             return .image
         }
         if snap.rtf != nil || snap.rtfd != nil {
             return .richText
         }
+        if snap.types.contains(.rtf) || snap.types.contains(.rtfd) {
+            return .richText
+        }
         if let html = snap.html,
            !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .richText
+        }
+        if snap.types.contains(.html) {
             return .richText
         }
         if let s = snap.string {

@@ -17,13 +17,15 @@ enum StructuredDataDetector {
     static func allMatches(in text: String, limit: Int = 8) -> [StructuredDataMatch] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        if let primary = primaryMatch(in: trimmed) { return [primary] }
+        // Regex over multi‑MB blobs is expensive and can hit NSString edge cases; scan a prefix.
+        let scanned = trimmed.count > 32_768 ? String(trimmed.prefix(32_768)) : trimmed
+        if let primary = primaryMatch(in: scanned) { return [primary] }
 
         var found: [StructuredDataMatch] = []
         var seen = Set<String>()
         for kind in detectionOrder {
             guard found.count < limit else { break }
-            if let m = matchKind(kind, in: trimmed, allowEmbedded: true), seen.insert(m.normalized).inserted {
+            if let m = matchKind(kind, in: scanned, allowEmbedded: true), seen.insert(m.normalized).inserted {
                 found.append(m)
             }
         }
@@ -106,10 +108,12 @@ enum StructuredDataDetector {
 
     private static func extractIBAN(from text: String) -> String? {
         let pattern = #"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b"#
-        guard let re = try? NSRegularExpression(pattern: pattern),
-              let m = re.firstMatch(in: text.uppercased(), range: NSRange(text.startIndex..., in: text)),
-              let r = Range(m.range, in: text) else { return nil }
-        let s = String(text[r]).replacingOccurrences(of: " ", with: "").uppercased()
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let upper = text.uppercased()
+        guard let range = safeFullNSRange(in: upper) else { return nil }
+        guard let m = re.firstMatch(in: upper, range: range),
+              let r = Range(m.range, in: upper) else { return nil }
+        let s = String(upper[r]).replacingOccurrences(of: " ", with: "")
         return isValidIBAN(s) ? s : nil
     }
 
@@ -228,7 +232,7 @@ enum StructuredDataDetector {
     // MARK: - Helpers
 
     private static func isFullMatch(_ regex: NSRegularExpression, in text: String) -> Bool {
-        let range = NSRange(text.startIndex..., in: text)
+        guard let range = safeFullNSRange(in: text) else { return false }
         guard let m = regex.firstMatch(in: text, range: range) else { return false }
         return m.range.location == 0 && m.range.length == range.length
     }
@@ -239,10 +243,16 @@ enum StructuredDataDetector {
         fullString: String,
         allowEmbedded: Bool
     ) -> String? {
-        let range = NSRange(fullString.startIndex..., in: fullString)
+        guard let range = safeFullNSRange(in: fullString) else { return nil }
         guard let m = regex.firstMatch(in: fullString, range: range),
               let r = Range(m.range, in: fullString) else { return nil }
         if !allowEmbedded && (m.range.location != 0 || m.range.length != range.length) { return nil }
         return String(fullString[r])
+    }
+
+    private static func safeFullNSRange(in text: String) -> NSRange? {
+        let ns = text as NSString
+        guard ns.length > 0 else { return nil }
+        return NSRange(location: 0, length: ns.length)
     }
 }

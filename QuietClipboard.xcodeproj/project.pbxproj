@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -246,7 +246,7 @@
 		DE168F747D871873EEB51E99 /* CaptureContentGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureContentGroup.swift; sourceTree = "<group>"; };
 		DFB8405F86644F387B603630 /* ClipboardItem+CopyTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ClipboardItem+CopyTracking.swift"; sourceTree = "<group>"; };
 		E15A17AFD8A9A70DE7B6A653 /* CaptureSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSettingsTab.swift; sourceTree = "<group>"; };
-		E275A42C4856B7B6BCC3E933 /* QuietClipboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuietClipboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E275A42C4856B7B6BCC3E933 /* Quiet Clipboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Quiet Clipboard.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8D66D0CC1B426A436DAEA76 /* AccessibilityGateWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityGateWindow.swift; sourceTree = "<group>"; };
 		ED7868F6E5ADE54214FB0CF2 /* ClipPreviewStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipPreviewStyle.swift; sourceTree = "<group>"; };
 		EEC3C17883C0BE101F82F640 /* SettingsWindowOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowOpener.swift; sourceTree = "<group>"; };
@@ -362,7 +362,7 @@
 		CF40072A0012075DF4D6E876 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E275A42C4856B7B6BCC3E933 /* QuietClipboard.app */,
+				E275A42C4856B7B6BCC3E933 /* Quiet Clipboard.app */,
 				7066C438C5F58B66D67D655B /* QuietClipboardTests.xctest */,
 			);
 			name = Products;
@@ -523,7 +523,7 @@
 			packageProductDependencies = (
 			);
 			productName = QuietClipboard;
-			productReference = E275A42C4856B7B6BCC3E933 /* QuietClipboard.app */;
+			productReference = E275A42C4856B7B6BCC3E933 /* Quiet Clipboard.app */;
 			productType = "com.apple.product-type.application";
 		};
 		56866B185D7C58F65888ED1E /* QuietClipboardTests */ = {
@@ -572,7 +572,6 @@
 			);
 			mainGroup = 87245A38DF83C10BCF6CDFD9;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -798,7 +797,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.2;
+				MARKETING_VERSION = 0.2.3;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -885,7 +884,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.2.2;
+				MARKETING_VERSION = 0.2.3;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -908,6 +907,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 0.2.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.quiet.QuietClipboard;
 				PRODUCT_NAME = "Quiet Clipboard";
 				SDKROOT = macosx;
@@ -926,6 +926,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 0.2.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.quiet.QuietClipboard;
 				PRODUCT_NAME = "Quiet Clipboard";
 				SDKROOT = macosx;
