@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
 
+## [0.2.5] — 2026-06-17
+
+Version **0.2.5**
+
+### Build 1
+
+#### Changed
+
+- **App icon refresh** — updated icon across all sizes (16 → 1024 px) with a refined design
+
+---
+
 ## [0.2.4] — 2026-06-17
 
 Version **0.2.4**
