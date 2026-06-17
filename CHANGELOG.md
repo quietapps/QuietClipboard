@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 Version and build numbers match `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `QuietClipboard.xcodeproj` and `QuietClipboard/Info.plist`.
 
 
+## [0.2.4] — 2026-06-17
+
+Version **0.2.4**
+
+### Build 1
+
+#### Changed
+
+- **Library performance** — raw clipboard payloads now use external storage, so opening the Library no longer faults tens of MB of image/file data into memory just to render cards; the heavy data loads only when a clip is actually pasted or dragged. Existing histories migrate automatically on first launch
+- **Library filtering** — the tab/type/app/search/sort pipeline is computed once per render instead of ~5×, and the Pinned tab lookup is O(n) instead of O(n²); both cut render cost noticeably on large libraries
+
+#### Fixed
+
+- **Drag-and-drop console warnings** — the internal `app.quiet.QuietClipboard.item-id` drag type is now declared in the app's Info.plist, silencing the "type was expected to be declared and exported" warnings emitted when dragging clips
+
+---
+
 ## [0.2.3] — 2026-06-12
 
 Version **0.2.3**

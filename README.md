@@ -30,7 +30,7 @@ Quiet Clipboard runs silently in your menu bar and captures every copy you make.
 
 ## Features
 
-**Current release (Xcode):** version **0.2.3**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
+**Current release (Xcode):** version **0.2.4**, build **1** — see [CHANGELOG](CHANGELOG.md) for per-build notes
 
 ### Capture & history
 
@@ -91,7 +91,7 @@ The cask strips the macOS quarantine attribute on install so Gatekeeper does not
 
 ### Direct download
 
-1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.2.3**)
+1. Grab the latest `QuietClipboard-*.zip` from [Releases](https://github.com/quietapps/QuietClipboard/releases/latest) (tag matches `CFBundleShortVersionString`, currently **0.2.4**)
 2. Unzip → drag **Quiet Clipboard.app** into `/Applications`
 3. Strip the quarantine attribute (or right-click → Open once):
 

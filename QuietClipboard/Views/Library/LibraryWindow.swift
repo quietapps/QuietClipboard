@@ -25,40 +25,48 @@ struct LibraryWindow: View {
     @State private var gridContainerWidth: CGFloat = 0
 
     // MARK: – Filtering (preserved from original)
+    //
+    // Each render touches the filtered list, the section grouping, and the type/app counts from
+    // several call sites. Every one of those used to re-run the full filter+sort over `allItems`
+    // (1.7k+ items), so a single body pass recomputed the pipeline ~5×. The pipeline now takes the
+    // upstream array as a parameter and `body` computes each stage exactly once, threading the
+    // results down. The no-argument computed wrappers remain for the key-handler call sites
+    // (arrow navigation, taps) which fire outside `body`.
 
     // Items filtered only by tab selection (no type/app/search filters)
-    private var selectionItems: [ClipboardItem] {
-        var items = allItems
+    private func selectionItems(_ all: [ClipboardItem]) -> [ClipboardItem] {
         switch state.selection {
-        case .history, .timeline: break
-        case .favorites: items = items.filter(\.isFavorite)
+        case .history, .timeline: return all
+        case .favorites: return all.filter(\.isFavorite)
         case .pinned:
-            let ordered = coordinator.pinned.orderedItemIDs()
-            items = ordered.compactMap { id in allItems.first(where: { $0.id == id }) }
+            // Build an id→item index once (O(n)) instead of a linear scan per pinned id (O(n²)).
+            let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            return coordinator.pinned.orderedItemIDs().compactMap { byID[$0] }
         case .screenshots:
-            items = items.filter { $0.contentType == .image || $0.contentType == .screenshot }
+            return all.filter { $0.contentType == .image || $0.contentType == .screenshot }
         case .category(let id):
-            items = items.filter { item in item.categories.contains(where: { $0.id == id }) }
+            return all.filter { item in item.categories.contains(where: { $0.id == id }) }
         }
-        return items
     }
 
+    private var selectionItems: [ClipboardItem] { selectionItems(allItems) }
+
     // For filter bar pills: type counts from selectionItems
-    var typeCounts: [(ClipboardContentType, Int)] {
-        let dict = Dictionary(grouping: selectionItems, by: \.contentType)
+    func typeCounts(_ selItems: [ClipboardItem]) -> [(ClipboardContentType, Int)] {
+        let dict = Dictionary(grouping: selItems, by: \.contentType)
         return dict.map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }
     }
 
     // For filter bar pills: app counts from selectionItems
-    var appCounts: [(name: String, bundleID: String?, count: Int)] {
-        let groups = Dictionary(grouping: selectionItems.filter { $0.sourceAppName != nil },
+    func appCounts(_ selItems: [ClipboardItem]) -> [(name: String, bundleID: String?, count: Int)] {
+        let groups = Dictionary(grouping: selItems.filter { $0.sourceAppName != nil },
                                 by: { $0.sourceAppName! })
         return groups.map { (name: $0.key, bundleID: $0.value.first?.sourceAppBundleID, count: $0.value.count) }
             .sorted { $0.count > $1.count }
     }
 
-    var filtered: [ClipboardItem] {
-        var items = selectionItems
+    private func filtered(_ selItems: [ClipboardItem]) -> [ClipboardItem] {
+        var items = selItems
 
         if let t = state.typeFilter {
             items = items.filter { $0.contentType == t }
@@ -70,10 +78,9 @@ struct LibraryWindow: View {
 
         let q = state.search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
-            // `filtered` is read several times per render; the ranked scan (bounded Levenshtein
-            // over the candidate pool) is the dominant cost. Cache it keyed by the inputs that
-            // affect the result so a single render — and repeated renders with the same query —
-            // recompute at most once.
+            // The ranked scan (bounded Levenshtein over the candidate pool) is the dominant search
+            // cost. Cache it keyed by the inputs that affect the result so repeated renders with
+            // the same query recompute at most once.
             let key = "\(q)|\(state.selection)|\(state.typeFilter?.rawValue ?? "")|\(state.appFilter ?? "")|\(allItems.count)|\(items.count)"
             if rankCache.key == key { return rankCache.value }
             let ranked = ClipSearchMatcher.ranked(items, query: q)
@@ -98,14 +105,18 @@ struct LibraryWindow: View {
         return items
     }
 
-    var displaySections: [LibrarySection] {
+    var filtered: [ClipboardItem] { filtered(selectionItems) }
+
+    private func displaySections(_ filteredItems: [ClipboardItem]) -> [LibrarySection] {
         LibraryDisplayGrouping.sections(
-            from: filtered,
+            from: filteredItems,
             groupBy: state.groupBy,
             categories: categories,
             collapseNearDuplicates: Preferences.collapseDuplicates
         )
     }
+
+    var displaySections: [LibrarySection] { displaySections(filtered) }
 
     var selectedItem: ClipboardItem? {
         guard let id = state.selectedItemID else { return nil }
@@ -318,13 +329,19 @@ struct LibraryWindow: View {
     // MARK: – Body
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Compute the filter pipeline once per render and thread the results into every consumer
+        // below, instead of letting each call site re-run it over all items.
+        let selItems = selectionItems(allItems)
+        let filteredItems = filtered(selItems)
+        let sections = displaySections(filteredItems)
+
+        return VStack(spacing: 0) {
             LibraryTopBar(state: state)
             if state.showTypeFilterBar {
-                LibraryTypeFilterBar(state: state, typeCounts: typeCounts, total: selectionItems.count)
+                LibraryTypeFilterBar(state: state, typeCounts: typeCounts(selItems), total: selItems.count)
             }
             if state.showAppFilterBar {
-                LibraryAppFilterBar(state: state, appCounts: appCounts, total: selectionItems.count)
+                LibraryAppFilterBar(state: state, appCounts: appCounts(selItems), total: selItems.count)
             }
             LibraryCategoryTabBar(
                 state: state,
@@ -341,22 +358,22 @@ struct LibraryWindow: View {
                 ZStack(alignment: .trailing) {
                 // Grid area — always full width
                 Group {
-                    if filtered.isEmpty {
+                    if filteredItems.isEmpty {
                         emptyState
                     } else if state.view == .timeline || state.selection == .timeline {
                         ClipboardTimelineView(
-                            items: filtered,
+                            items: filteredItems,
                             libraryState: state,
                             selectedID: $state.selectedItemID,
                             onActivate: { copyFromLibrary($0) },
                             onItemTap: handleItemTap
                         )
                     } else if state.view == .grid {
-                        libraryGrid
+                        libraryGrid(filteredItems)
                     } else {
                         ClipboardItemList(
-                            sections: displaySections,
-                            items: filtered,
+                            sections: sections,
+                            items: filteredItems,
                             libraryState: state,
                             selectedID: $state.selectedItemID,
                             expandedGroups: $state.expandedDuplicateGroups,
@@ -394,7 +411,7 @@ struct LibraryWindow: View {
                 if state.pasteQueueCount > 0 {
                     LibraryPasteQueueBar(
                         state: state,
-                        orderedItems: state.orderedQueueItems(in: filtered),
+                        orderedItems: state.orderedQueueItems(in: filteredItems),
                         onPaste: pasteQueue,
                         onClear: { state.clearPasteQueue() }
                     )
@@ -437,7 +454,7 @@ struct LibraryWindow: View {
 
     // MARK: – Grid area (new adaptive layout)
 
-    private var libraryGrid: some View {
+    private func libraryGrid(_ filteredItems: [ClipboardItem]) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(
@@ -447,12 +464,12 @@ struct LibraryWindow: View {
                     ), spacing: LibraryGridMetrics.libraryGridSpacing)],
                     spacing: LibraryGridMetrics.libraryGridSpacing
                 ) {
-                    ForEach(filtered) { item in
+                    ForEach(filteredItems) { item in
                         LibraryCard(
                             item: item,
                             isSelected: item.id == state.selectedItemID,
                             isQueued: state.isQueued(item.id),
-                            queuePosition: state.queuePosition(for: item.id, in: filtered),
+                            queuePosition: state.queuePosition(for: item.id, in: filteredItems),
                             onTap: { handleItemTap(item) },
                             onCopy: { copyFromLibrary(item) },
                             onFavorite: { toggleFavorite(item) },

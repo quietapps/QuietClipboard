@@ -7,30 +7,24 @@ Change this block each release. Then run section 2 top to bottom in the same ter
 ```bash
 cd /Users/parth/Projects/Apps/QuietClipboard
 
-export VERSION=0.1.8
+export VERSION=0.2.4
 export BUILD=1
-export OLD_VERSION=0.1.7
+export OLD_VERSION=0.2.3
 export RELEASE_DATE=$(date +%Y-%m-%d)
 export CHANGELOG_ANCHOR="$(echo "$VERSION" | tr -d '.')--${RELEASE_DATE}"
 
-export RELEASE_SUMMARY="Quick Search gets a clear button, result count, icon-only bottom bar, and solid accent chip highlights; Swift 6 concurrency warnings resolved."
+export RELEASE_SUMMARY="The Library is far faster with large histories — smoother scrolling and quicker open. Raw clipboard payloads are no longer loaded into memory just to draw the grid, and the filter pipeline recomputes far less per render."
 
-export RELEASE_ADDED="$(cat <<'EOF'
-- **Quick Search clear button** — × button appears in the search field whenever text is entered; clears the query in one click
-- **Quick Search result count** — a compact "X of Y" label appears below the filter bar whenever a filter or search is active
-EOF
-)"
+export RELEASE_ADDED=""
 
 export RELEASE_CHANGED="$(cat <<'EOF'
-- **Quick Search bottom bar** — Library, Pause/Resume, Settings, and Quit are now icon-only circle buttons matching the toolbar style; text labels removed
-- **Quick Search filter chips** — selected chip now fills with solid accent color and white text instead of a translucent tint; clearer active state at a glance
-- **Quick Search filter bar fade** — a gradient mask fades both edges of the filter bar so chips scroll smoothly off-screen without hard clipping
-- **Pinned and Favorites chips** — icon-only in the filter bar; tooltip and VoiceOver still expose the full label
+- **Library performance** — raw clipboard payloads now use external storage, so opening the Library no longer faults tens of MB of image/file data into memory just to render cards; the heavy data loads only when a clip is actually pasted or dragged. Existing histories migrate automatically on first launch
+- **Library filtering** — the tab/type/app/search/sort pipeline is computed once per render instead of ~5×, and the Pinned tab lookup is O(n) instead of O(n²); both cut render cost noticeably on large libraries
 EOF
 )"
 
 export RELEASE_FIXED="$(cat <<'EOF'
-- **Swift 6 concurrency** — `ClipboardMonitor` static size constants (`maxRawBytes`, `maxTextBytes`) marked `nonisolated(unsafe)`; `isTypeCaptured` closure annotated `@Sendable`; resolves actor-isolation errors under Swift 6 language mode
+- **Drag-and-drop console warnings** — the internal `app.quiet.QuietClipboard.item-id` drag type is now declared in the app's Info.plist, silencing the "type was expected to be declared and exported" warnings emitted when dragging clips
 EOF
 )"
 ```

@@ -8,7 +8,11 @@ final class ClipboardItem {
     #Index<ClipboardItem>([\.contentHash], [\.createdAt], [\.lastCopiedAt], [\.contentTypeRaw])
 
     @Attribute(.unique) var id: UUID
-    var content: Data
+    // The raw clipboard payload is the heaviest field (images/files/RTF) and is only needed at
+    // paste/drag time — never for rendering cards, which use `thumbnailData`/`textContent`.
+    // External storage keeps it out of the SQLite row so `@Query` fetches don't fault tens of MB
+    // of blobs into memory just to draw the Library grid.
+    @Attribute(.externalStorage) var content: Data
     var contentHash: String = ""
     var contentTypeRaw: String
     var textContent: String?
